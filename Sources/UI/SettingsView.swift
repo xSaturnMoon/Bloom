@@ -1,5 +1,6 @@
 import SwiftUI
 import AudioToolbox
+import UIKit
 
 // MARK: - Settings View
 
