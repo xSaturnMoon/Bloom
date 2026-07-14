@@ -1,4 +1,4 @@
 {
-    "version": "1.2.31",
+    "version": "1.2.32",
     "notes": "Implement automatic JWT token refresh to prevent session expiration issues."
 }
