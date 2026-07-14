@@ -135,7 +135,7 @@ struct CalendarView: View {
     @State private var currentMonth = Date()
     // BUG-26 FIX: Usiamo un tipo opzionale per il sheet "aggiungi evento"
     // così .sheet(item:) garantisce che la data sia sempre quella del giorno toccato.
-    @State private var addEventForDate: Date?
+    @State private var addEventForDate: SelectedDate?
 
     var body: some View {
         NavigationStack {
@@ -206,13 +206,11 @@ struct CalendarView: View {
                     }
                 }
             }
-            // BUG-26 FIX: .sheet(item:) invece di .sheet(isPresented:)
-            // Questo garantisce che la data sia già aggiornata quando il sheet viene creato.
-            .sheet(item: $addEventForDate) { date in
+            .sheet(item: $addEventForDate) { item in
                 AddEventView(isPresented: Binding(
                     get: { addEventForDate != nil },
                     set: { if !$0 { addEventForDate = nil } }
-                ), initialDate: date)
+                ), initialDate: item.date)
             }
             .sheet(item: $selectedEvent) { event in
                 EditEventView(event: event)
@@ -254,7 +252,7 @@ struct CalendarView: View {
 struct DayCardRow: View {
     let date: Date
     @Binding var selectedEvent: BloomEvent?
-    @Binding var addEventForDate: Date?
+    @Binding var addEventForDate: SelectedDate?
     // BUG-17 FIX: @ObservedObject invece di @StateObject per i singleton
     @ObservedObject var manager = CalendarManager.shared
 
@@ -297,7 +295,7 @@ struct DayCardRow: View {
                     // BUG-26 FIX: Imposta direttamente la data nel binding item.
                     // SwiftUI crea il sheet DOPO questa assegnazione, quindi
                     // AddEventView riceve sempre la data corretta.
-                    addEventForDate = date
+                    addEventForDate = SelectedDate(date: date)
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.title2)
@@ -611,7 +609,8 @@ struct AddEventView: View {
     }
 }
 
-// MARK: - Date identifiable extension for sheet(item:)
-extension Date: @retroactive Identifiable {
-    public var id: TimeInterval { timeIntervalSince1970 }
+// MARK: - Selected Date Wrapper per sheet(item:)
+struct SelectedDate: Identifiable {
+    let date: Date
+    var id: Date { date }
 }
