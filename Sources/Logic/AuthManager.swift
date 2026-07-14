@@ -5,7 +5,7 @@ import SwiftUI
 // BUG-21 FIX: `id` ora è incluso in Codable tramite CodingKeys,
 // così rimane stabile tra encode/decode invece di rigenerarsi ogni volta.
 
-struct BloomUser: Codable, Identifiable {
+struct BloomUser: Codable, Identifiable, Equatable {
     var id: UUID
     var name: String
     var email: String
