@@ -39,19 +39,21 @@ jobs:
 
       - name: Update update.json
         run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          NOTES=$(python3 -c "import json; print(json.load(open('version.json')).get('notes', ''))")
-          python3 -c "
+          # BUG-24 FIX: Usa Python puro per leggere e scrivere il JSON senza
+          # interpolare stringhe nella shell, evitando corruzione da apici/newline.
+          python3 << 'EOF'
           import json
+          with open('version.json', 'r') as f:
+              version_data = json.load(f)
           data = {
-            'version': '$VERSION',
-            'notes': '''$NOTES''',
-            'url': 'https://github.com/xSaturnMoon/Bloom/releases/download/latest/Bloom.ipa'
+              'version': version_data['version'],
+              'notes': version_data.get('notes', ''),
+              'url': 'https://github.com/xSaturnMoon/Bloom/releases/download/latest/Bloom.ipa'
           }
-          with open('update.json', 'w') as f:
+          with open('update.json', 'w', encoding='utf-8') as f:
               json.dump(data, f, indent=2, ensure_ascii=False)
-          print('update.json updated to version', '$VERSION')
-          "
+          print('update.json updated to version', data['version'])
+          EOF
 
       - name: Commit and push update.json
         env:

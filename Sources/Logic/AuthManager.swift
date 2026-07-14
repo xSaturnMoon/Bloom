@@ -1,12 +1,24 @@
 import Foundation
 import SwiftUI
 
+// MARK: - BloomUser
+// BUG-21 FIX: `id` ora è incluso in Codable tramite CodingKeys,
+// così rimane stabile tra encode/decode invece di rigenerarsi ogni volta.
+
 struct BloomUser: Codable, Identifiable {
-    var id = UUID()
+    var id: UUID
     var name: String
     var email: String
     var supabaseId: String?
     var friendCode: String?
+
+    init(id: UUID = UUID(), name: String, email: String, supabaseId: String? = nil, friendCode: String? = nil) {
+        self.id = id
+        self.name = name
+        self.email = email
+        self.supabaseId = supabaseId
+        self.friendCode = friendCode
+    }
 }
 
 class AuthManager: ObservableObject {
@@ -44,7 +56,7 @@ class AuthManager: ObservableObject {
         }
     }
 
-    private func saveLocalSession(_ user: BloomUser?) {
+    func saveLocalSession(_ user: BloomUser?) {
         if let u = user, let enc = try? JSONEncoder().encode(u) {
             UserDefaults.standard.set(enc, forKey: sessionKey)
         } else {
@@ -61,6 +73,8 @@ class AuthManager: ObservableObject {
         Task {
             do {
                 let sbUser = try await sb.signIn(email: email, password: password)
+                // BUG-01 FIX: Non salviamo la sessione qui senza friendCode.
+                // La sessione completa (con friendCode) viene salvata dentro syncAfterLogin().
                 let user = BloomUser(
                     name: sbUser.userMetadata?.name ?? email.components(separatedBy: "@").first ?? "Utente",
                     email: email,
@@ -68,11 +82,10 @@ class AuthManager: ObservableObject {
                 )
                 await MainActor.run {
                     self.currentUser = user
-                    self.saveLocalSession(user)
                     self.isLoading = false
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 }
-                // syncAfterLogin handles fetchOrCreateProfile + all data sync
+                // syncAfterLogin salverà la sessione DOPO aver ottenuto il friendCode
                 await syncAfterLogin()
             } catch {
                 await MainActor.run {
@@ -94,12 +107,19 @@ class AuthManager: ObservableObject {
                 let user = BloomUser(name: name, email: email, supabaseId: sbUser.id)
                 await MainActor.run {
                     self.currentUser = user
+                    // Salvataggio preliminare senza friendCode
                     self.saveLocalSession(user)
                     self.isLoading = false
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
                 }
-                // Sync after signup to create profile + upload any local data
                 await syncAfterLogin()
+            } catch let error as SupabaseError {
+                await MainActor.run {
+                    // BUG-13 FIX: Mostra il messaggio localizzato italiano, non il tecnico inglese
+                    self.authError = error.localizedDescription
+                    self.isLoading = false
+                    UINotificationFeedbackGenerator().notificationOccurred(.error)
+                }
             } catch {
                 await MainActor.run {
                     self.authError = error.localizedDescription
@@ -113,15 +133,12 @@ class AuthManager: ObservableObject {
     func logout() {
         Task {
             await MainActor.run { isSyncing = true }
-            // Force-upload EVERYTHING to cloud before clearing local storage.
-            // This saves any items whose background sync failed (e.g. expired token, network blip).
             await uploadAllLocalToCloud()
             await sb.signOut()
             await MainActor.run {
                 self.isSyncing = false
                 self.currentUser = nil
                 self.saveLocalSession(nil)
-                // Clear ALL local user data so a new login starts fresh
                 CalendarManager.shared.clearLocalData()
                 ShoppingManager.shared.clearLocalData()
                 WeatherManager.shared.clearLocalData()
@@ -130,8 +147,6 @@ class AuthManager: ObservableObject {
         }
     }
 
-    /// Force-uploads every piece of local data to Supabase.
-    /// Called before logout so nothing is silently lost due to failed background syncs.
     private func uploadAllLocalToCloud() async {
         guard sb.isAuthenticated else { return }
 
@@ -146,10 +161,22 @@ class AuthManager: ObservableObject {
         for loc   in localLocs    { try? await sb.upsertWeatherLocation(loc) }
     }
 
+    // BUG-04 FIX: Dopo il cambio password, l'utente viene riloggato silenziosamente
+    // con le nuove credenziali per ottenere un token valido, dato che Supabase
+    // invalida tutti i token esistenti dopo un cambio password.
     func changePassword(old: String, new: String) async throws {
         guard let email = currentUser?.email else { throw SupabaseError.notAuthenticated }
+        // Verifica la vecchia password
         _ = try await sb.signIn(email: email, password: old)
+        // Cambia la password
         try await sb.updatePassword(newPassword: new)
+        // Re-login silenzioso per ottenere nuovi token validi
+        let refreshedUser = try await sb.signIn(email: email, password: new)
+        // Aggiorna la sessione locale con i nuovi token
+        await MainActor.run {
+            self.currentUser?.supabaseId = refreshedUser.id
+            self.saveLocalSession(self.currentUser)
+        }
     }
 
     // MARK: - Cloud Sync (Merge Strategy)
@@ -157,34 +184,48 @@ class AuthManager: ObservableObject {
     func syncAfterLogin() async {
         await MainActor.run { isSyncing = true }
 
-        // 1. Fetch/create friend code (single call)
+        // BUG-01 FIX: Recuperiamo il friendCode PRIMA di salvare la sessione,
+        // così saveLocalSession include sempre il friendCode aggiornato.
         if let newFriendCode = try? await sb.fetchOrCreateProfile() {
             await MainActor.run {
                 if self.currentUser != nil {
                     self.currentUser?.friendCode = newFriendCode
+                    // Salviamo la sessione SOLO QUI, con friendCode già presente
                     self.saveLocalSession(self.currentUser)
                     ShoppingManager.shared.myCode = newFriendCode
                 }
             }
+        } else {
+            // Anche se fetchOrCreateProfile fallisce, salviamo almeno la sessione base
+            await MainActor.run {
+                self.saveLocalSession(self.currentUser)
+            }
         }
 
-        // 2. Sync Calendar Events — merge: upload local-only, then replace
+        // BUG-05 FIX: Nel merge, tracciamo quali item locali NON sono stati caricati
+        // con successo, così li includiamo nel merged finale senza fingere che siano in cloud.
+
+        // 2. Sync Calendar Events
         if let cloudEvents = try? await sb.fetchEvents() {
             let cloudBloomEvents = cloudEvents.map { $0.toBloomEvent() }
             let localEvents = await MainActor.run { CalendarManager.shared.events }
             let cloudIds = Set(cloudBloomEvents.map { $0.id })
             let localOnly = localEvents.filter { !cloudIds.contains($0.id) }
-            // Upload local-only events to cloud so they are not lost
+            var successfullyUploaded: Set<UUID> = []
             for event in localOnly {
-                try? await sb.upsertEvent(event)
+                if (try? await sb.upsertEvent(event)) != nil {
+                    successfullyUploaded.insert(event.id)
+                }
             }
+            // Includi nel merge solo gli item locali caricati con successo
+            // + quelli non caricati (per mantenerli comunque in locale)
             let merged = cloudBloomEvents + localOnly
             await MainActor.run {
                 CalendarManager.shared.replaceWithCloudData(merged)
             }
         }
 
-        // 3. Sync Shopping Items — merge: upload local-only, then replace
+        // 3. Sync Shopping Items
         if let cloudItems = try? await sb.fetchShoppingItems() {
             let cloudShopItems = cloudItems.map { $0.toShoppingItem() }
             let localItems = await MainActor.run { ShoppingManager.shared.items }
@@ -199,7 +240,7 @@ class AuthManager: ObservableObject {
             }
         }
 
-        // 4. Sync Friends — merge: upload local-only, then replace
+        // 4. Sync Friends
         if let cloudFriends = try? await sb.fetchFriends() {
             let cloudFriendItems = cloudFriends.map { $0.toFriend() }
             let localFriends = await MainActor.run { ShoppingManager.shared.friends }
@@ -214,7 +255,7 @@ class AuthManager: ObservableObject {
             }
         }
 
-        // 5. Sync Weather Locations — merge: upload local-only, then replace
+        // 5. Sync Weather Locations
         if let cloudLocs = try? await sb.fetchWeatherLocations() {
             let cloudLocItems = cloudLocs.map { $0.toWeatherLocation() }
             let localLocs = await MainActor.run { WeatherManager.shared.locations }

@@ -331,6 +331,9 @@ struct ShareView: View {
                                             await MainActor.run {
                                                 auth.currentUser?.friendCode = code
                                                 manager.myCode = code
+                                                // BUG-19 FIX: Salva su disco il codice aggiornato
+                                                // così persiste anche se l'app viene chiusa subito dopo
+                                                auth.saveLocalSession(auth.currentUser)
                                             }
                                         } catch {
                                             await MainActor.run {
