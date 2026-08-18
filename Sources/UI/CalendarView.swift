@@ -1,127 +1,17 @@
 import SwiftUI
 
-// MARK: - Time Picker Mode
-// Letto da @AppStorage("timePickerMode"): "Apple" usa il wheel nativo,
-// "Manuale" usa input numerico (920 → 09:20).
+// MARK: - Time Picker Field (wheel nativo Apple)
 
-/// View wrapper che mostra il picker di orario in base alla preferenza utente.
-/// Se timePickerMode == "Manuale", usa ManualTimeInputField; altrimenti DatePicker wheel.
+/// Selettore orario con wheel Apple nativo — semplice e familiare per tutti.
 struct TimePickerField: View {
     let label: String
     @Binding var time: Date
-    @AppStorage("timePickerMode") private var timePickerMode: String = "Apple"
 
     var body: some View {
-        if timePickerMode == "Manuale" {
-            ManualTimeInputField(label: label, time: $time)
-        } else {
-            DatePicker(label, selection: $time, displayedComponents: .hourAndMinute)
-                .datePickerStyle(.wheel)
-                .labelsHidden()
-        }
-    }
-}
-
-/// Input numerico per l'orario: l'utente digita cifre (es. "920" → 09:20).
-/// Validazione in tempo reale: se l'orario non è valido, mostra "Orario non valido".
-struct ManualTimeInputField: View {
-    let label: String
-    @Binding var time: Date
-    @State private var inputText: String = ""
-    @State private var isInvalid: Bool = false
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(label)
-                    .foregroundStyle(.primary)
-                Spacer()
-                // Mostra l'orario corrente come riferimento
-                Text(time.formatted(.dateTime.hour().minute()))
-                    .foregroundStyle(.secondary)
-                    .font(.footnote)
-            }
-
-            HStack(spacing: 8) {
-                TextField("es. 920 → 09:20", text: $inputText)
-                    .keyboardType(.numberPad)
-                    .focused($isFocused)
-                    .onChange(of: inputText) { _, newValue in
-                        // Limita a 4 cifre
-                        let digits = newValue.filter { $0.isNumber }
-                        if digits.count > 4 {
-                            inputText = String(digits.prefix(4))
-                        } else {
-                            inputText = digits
-                        }
-                        validateAndApply(inputText)
-                    }
-                    .padding(10)
-                    .background(Color(uiColor: .secondarySystemGroupedBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-
-                if isInvalid && !inputText.isEmpty {
-                    Label("Orario non valido", systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundColor(.red)
-                        .transition(.opacity.combined(with: .scale))
-                }
-            }
-            .animation(.spring(response: 0.3), value: isInvalid)
-        }
-        .onAppear {
-            // Pre-popola con l'orario corrente
-            let cal = Calendar.current
-            let h = cal.component(.hour, from: time)
-            let m = cal.component(.minute, from: time)
-            inputText = String(format: "%02d%02d", h, m)
-        }
-    }
-
-    private func validateAndApply(_ raw: String) {
-        guard !raw.isEmpty else { isInvalid = false; return }
-
-        // Interpreta l'input: "920" → h=9 m=20, "1840" → h=18 m=40
-        let h: Int
-        let m: Int
-
-        switch raw.count {
-        case 1:
-            // Solo una cifra → ora (0..9), minuti 0
-            h = Int(raw) ?? -1
-            m = 0
-        case 2:
-            // Due cifre → ora (0..23), minuti 0
-            h = Int(raw) ?? -1
-            m = 0
-        case 3:
-            // Tre cifre → prima cifra = ore, ultime due = minuti (es. "920" → 09:20)
-            h = Int(String(raw.prefix(1))) ?? -1
-            m = Int(String(raw.suffix(2))) ?? -1
-        case 4:
-            // Quattro cifre → prime due = ore, ultime due = minuti
-            h = Int(String(raw.prefix(2))) ?? -1
-            m = Int(String(raw.suffix(2))) ?? -1
-        default:
-            isInvalid = true
-            return
-        }
-
-        guard h >= 0, h <= 23, m >= 0, m <= 59 else {
-            isInvalid = true
-            return
-        }
-
-        isInvalid = false
-        // Aggiorna il binding `time` con il nuovo orario
-        let cal = Calendar.current
-        var comps = cal.dateComponents([.year, .month, .day], from: time)
-        comps.hour = h
-        comps.minute = m
-        if let newDate = cal.date(from: comps) {
-            time = newDate
-        }
+        DatePicker(label, selection: $time, displayedComponents: .hourAndMinute)
+            .datePickerStyle(.wheel)
+            .labelsHidden()
+            .frame(maxWidth: .infinity)
     }
 }
 
@@ -458,83 +348,141 @@ struct AppleEventCard: View {
     let event: BloomEvent
     let onTap: () -> Void
     @ObservedObject var manager = CalendarManager.shared
+    @State private var swipeOffset: CGFloat = 0
+    @State private var isDeleted = false
+
+    private let deleteThreshold: CGFloat = -80
+    private let deleteButtonWidth: CGFloat = 72
 
     var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 12) {
-                // Orario
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(event.startTime.formatted(.dateTime.hour().minute()))
-                        .font(.headline)
-                        .foregroundColor(.primary)
+        ZStack(alignment: .trailing) {
+            // Sfondo rosso eliminazione
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.red)
+                .frame(width: max(0, -swipeOffset))
+                .overlay(
+                    Image(systemName: "trash.fill")
+                        .foregroundColor(.white)
+                        .font(.title3)
+                        .opacity(swipeOffset < -20 ? 1 : 0)
+                        .animation(.easeIn(duration: 0.1), value: swipeOffset),
+                    alignment: .center
+                )
 
-                    if event.hasEndTime, let endTime = event.endTime {
-                        Text(endTime.formatted(.dateTime.hour().minute()))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
+            // Card principale
+            Button(action: {
+                if swipeOffset < -5 {
+                    // chiudi swipe se aperto
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { swipeOffset = 0 }
+                } else {
+                    onTap()
                 }
-                .frame(width: 55, alignment: .leading)
+            }) {
+                HStack(spacing: 12) {
+                    // Orario
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(event.startTime.formatted(.dateTime.hour().minute()))
+                            .font(.headline)
+                            .foregroundColor(.primary)
 
-                // Barra colorata verticale
-                Rectangle()
-                    .fill(event.isCompleted ? Color.green : Color.blue)
-                    .frame(width: 3.5, height: 38)
-                    .clipShape(Capsule())
-
-                // Titolo & Notifica
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(event.title)
-                        .font(.body.weight(.medium))
-                        .foregroundColor(event.isCompleted ? .secondary : .primary)
-                        .strikethrough(event.isCompleted)
-                        .lineLimit(2)
-
-                    if !event.reminders.isEmpty || event.reminderId != nil {
-                        HStack(spacing: 4) {
-                            Image(systemName: "bell.fill")
-                                .font(.caption2)
-                                .foregroundColor(.orange)
-                            Text("Promemoria")
+                        if event.hasEndTime, let endTime = event.endTime {
+                            Text(endTime.formatted(.dateTime.hour().minute()))
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
                     }
-                }
+                    .frame(width: 55, alignment: .leading)
 
-                Spacer()
+                    // Barra colorata verticale
+                    Rectangle()
+                        .fill(event.isCompleted ? Color.green : Color.blue)
+                        .frame(width: 3.5, height: 38)
+                        .clipShape(Capsule())
 
-                // Cerchietto completamento
-                Button {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                        manager.toggleComplete(event)
+                    // Titolo & Notifica
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(event.title)
+                            .font(.body.weight(.medium))
+                            .foregroundColor(event.isCompleted ? .secondary : .primary)
+                            .strikethrough(event.isCompleted)
+                            .lineLimit(2)
+
+                        if !event.reminders.isEmpty || event.reminderId != nil {
+                            HStack(spacing: 4) {
+                                Image(systemName: "bell.fill")
+                                    .font(.caption2)
+                                    .foregroundColor(.orange)
+                                Text("Promemoria")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                } label: {
-                    Image(systemName: event.isCompleted ? "checkmark.circle.fill" : "circle")
-                        .font(.title2)
-                        .foregroundColor(event.isCompleted ? .green : .secondary)
+
+                    Spacer()
+
+                    // Cerchietto completamento
+                    Button {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            manager.toggleComplete(event)
+                        }
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    } label: {
+                        Image(systemName: event.isCompleted ? "checkmark.circle.fill" : "circle")
+                            .font(.title2)
+                            .foregroundColor(event.isCompleted ? .green : .secondary)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                .padding(14)
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
             }
-            .padding(14)
-            .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            .buttonStyle(.plain)
+            .offset(x: swipeOffset)
+            .gesture(
+                DragGesture(minimumDistance: 10)
+                    .onChanged { value in
+                        guard !isDeleted else { return }
+                        let drag = value.translation.width
+                        if drag < 0 {
+                            swipeOffset = max(drag, -deleteButtonWidth - 10)
+                        } else if swipeOffset < 0 {
+                            swipeOffset = min(0, swipeOffset + drag)
+                        }
+                    }
+                    .onEnded { value in
+                        guard !isDeleted else { return }
+                        if swipeOffset < deleteThreshold {
+                            // Elimina con animazione
+                            isDeleted = true
+                            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                swipeOffset = -UIScreen.main.bounds.width
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                manager.deleteEvent(event)
+                            }
+                        } else {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                swipeOffset = 0
+                            }
+                        }
+                    }
             )
-        }
-        .buttonStyle(.plain)
-        .contextMenu {
-            Button(role: .destructive) {
-                withAnimation {
-                    manager.deleteEvent(event)
+            .contextMenu {
+                Button(role: .destructive) {
+                    withAnimation { manager.deleteEvent(event) }
+                } label: {
+                    Label("Elimina Impegno", systemImage: "trash")
                 }
-            } label: {
-                Label("Elimina Impegno", systemImage: "trash")
             }
         }
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }
 
