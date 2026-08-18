@@ -211,24 +211,16 @@ struct CalendarView: View {
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: 14) {
-                        Button {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                currentMonth = Date()
-                                selectedDate = Date()
-                            }
-                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        } label: {
-                            Text("Oggi").bold()
+                    Button {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            currentMonth = Date()
+                            selectedDate = Date()
                         }
-                        
-                        Button {
-                            showingAddEvent = true
-                        } label: {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.title3)
-                                .foregroundColor(.blue)
-                        }
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    } label: {
+                        Image(systemName: "calendar.badge.clock")
+                            .font(.title3)
+                            .foregroundColor(.blue)
                     }
                 }
             }
@@ -546,70 +538,48 @@ struct AppleEventCard: View {
     }
 }
 
+// MARK: - EditEventView
+
 struct EditEventView: View {
     @Environment(\.dismiss) var dismiss
     @State var event: BloomEvent
     @State private var title: String
     @State private var date: Date
     @State private var startTime: Date
-    @State private var newReminderTime: Date
-    @State private var isAddingReminder: Bool = false
-    @State private var reminders: [EventReminder]
+    @State private var reminderEnabled: Bool
+    @State private var reminderTime: Date
 
     init(event: BloomEvent) {
         self._event = State(initialValue: event)
         self._title = State(initialValue: event.title)
         self._date = State(initialValue: event.date)
         self._startTime = State(initialValue: event.startTime)
-        self._newReminderTime = State(initialValue: event.startTime)
 
-        var existingReminders = event.reminders
-        if existingReminders.isEmpty, let rt = event.reminderTime, let rid = event.reminderId {
-            existingReminders.append(EventReminder(time: rt, notificationId: rid))
-        }
-        self._reminders = State(initialValue: existingReminders)
+        let hasReminder = !event.reminders.isEmpty || event.reminderId != nil
+        self._reminderEnabled = State(initialValue: hasReminder)
+        
+        let initialReminderTime = event.reminders.first?.time ?? event.reminderTime ?? event.startTime
+        self._reminderTime = State(initialValue: initialReminderTime)
     }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Cosa") {
-                    TextField("Titolo", text: $title)
+                    TextField("Titolo impegno", text: $title)
+                        .font(.body)
                 }
+
                 Section("Quando") {
                     DatePicker("Giorno", selection: $date, displayedComponents: .date)
-                    // Feature: usa TimePickerField per rispettare la preferenza utente
                     TimePickerField(label: "Orario", time: $startTime)
                 }
-                Section("Notifiche") {
-                    Toggle("Aggiungi Promemoria", isOn: $isAddingReminder)
 
-                    if isAddingReminder {
-                        TimePickerField(label: "Orario Promemoria", time: $newReminderTime)
-                        Button("Salva Promemoria") {
-                            // BUG-11 FIX: ID assegnato subito, non stringa vuota
-                            let newReminder = EventReminder(time: newReminderTime, notificationId: UUID().uuidString)
-                            reminders.append(newReminder)
-                            isAddingReminder = false
-                        }
-                    }
-                }
+                Section("Promemoria") {
+                    Toggle("🔔 Avvisami con notifica", isOn: $reminderEnabled)
 
-                if !reminders.isEmpty {
-                    Section("Promemoria Programmati") {
-                        ForEach(reminders) { reminder in
-                            HStack {
-                                Text(reminder.time.formatted(.dateTime.hour().minute()))
-                                Spacer()
-                                Button(role: .destructive) {
-                                    reminders.removeAll(where: { $0.id == reminder.id })
-                                } label: {
-                                    Image(systemName: "trash")
-                                        .foregroundColor(.red)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
+                    if reminderEnabled {
+                        TimePickerField(label: "Orario Notifica", time: $reminderTime)
                     }
                 }
 
@@ -618,33 +588,58 @@ struct EditEventView: View {
                         CalendarManager.shared.deleteEvent(event)
                         dismiss()
                     } label: {
-                        Text("Elimina Impegno").frame(maxWidth: .infinity)
+                        HStack {
+                            Spacer()
+                            Label("Elimina Impegno", systemImage: "trash")
+                                .foregroundColor(.red)
+                            Spacer()
+                        }
                     }
                 }
             }
             .navigationTitle("Modifica Impegno")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) { Button("Annulla") { dismiss() } }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Annulla") { dismiss() }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Salva") {
-                        event.title = title
-                        event.date = date
-                        event.startTime = startTime
-                        event.reminders = reminders
-                        CalendarManager.shared.updateEvent(event)
-                        dismiss()
+                        saveChanges()
                     }
-                    .disabled(title.isEmpty)
+                    .bold()
+                    .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
         }
     }
+
+    private func saveChanges() {
+        event.title = title.trimmingCharacters(in: .whitespaces)
+        event.date = date
+        event.startTime = startTime
+
+        if reminderEnabled {
+            event.reminderTime = reminderTime
+            let id = event.reminders.first?.notificationId ?? event.reminderId ?? UUID().uuidString
+            event.reminderId = id
+            event.reminders = [EventReminder(time: reminderTime, notificationId: id)]
+        } else {
+            event.reminderTime = nil
+            event.reminderId = nil
+            event.reminders = []
+        }
+
+        CalendarManager.shared.updateEvent(event)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        dismiss()
+    }
 }
+
+// MARK: - AllRemindersView
 
 struct AllRemindersView: View {
     @Binding var isPresented: Bool
-    // BUG-17 FIX: @ObservedObject
     @ObservedObject var manager = CalendarManager.shared
 
     var body: some View {
@@ -696,16 +691,21 @@ struct AllRemindersView: View {
     }
 }
 
+// MARK: - AddEventView
+
 struct AddEventView: View {
     @Binding var isPresented: Bool
     let initialDate: Date
     @State private var title = ""
+    @State private var date: Date
     @State private var startTime: Date
     @State private var reminderEnabled = false
+    @State private var reminderTime: Date
 
     init(isPresented: Binding<Bool>, initialDate: Date) {
         self._isPresented = isPresented
         self.initialDate = initialDate
+        self._date = State(initialValue: initialDate)
 
         let now = Date()
         let cal = Calendar.current
@@ -714,42 +714,63 @@ struct AddEventView: View {
         comps.hour = nowComps.hour
         comps.minute = nowComps.minute
 
-        self._startTime = State(initialValue: cal.date(from: comps) ?? initialDate)
+        let start = cal.date(from: comps) ?? initialDate
+        self._startTime = State(initialValue: start)
+        self._reminderTime = State(initialValue: start)
     }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Cosa") {
-                    TextField("Esempio: Visita medica, Riunione...", text: $title)
+                Section("Cosa devi fare?") {
+                    TextField("Esempio: Visita medica, Dentista, Spesa...", text: $title)
+                        .font(.body)
                 }
-                Section("Quando (\(initialDate.formatted(.dateTime.day().month(.wide).locale(Locale(identifier: "it_IT")))))") {
+
+                Section("Quando") {
+                    DatePicker("Giorno", selection: $date, displayedComponents: .date)
                     TimePickerField(label: "Orario", time: $startTime)
                 }
-                Section("Notifiche") {
-                    Toggle("Attiva Promemoria", isOn: $reminderEnabled)
+
+                Section("Promemoria") {
+                    Toggle("🔔 Avvisami con notifica", isOn: $reminderEnabled)
+
+                    if reminderEnabled {
+                        TimePickerField(label: "Orario Notifica", time: $reminderTime)
+                    }
                 }
             }
-            .navigationTitle("Aggiungi Impegno")
+            .navigationTitle("Nuovo Impegno")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) { Button("Annulla") { isPresented = false } }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Annulla") { isPresented = false }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Salva") {
-                        CalendarManager.shared.addEvent(
-                            title: title,
-                            date: initialDate,
-                            startTime: startTime,
-                            endTime: nil,
-                            hasEndTime: false,
-                            reminderEnabled: reminderEnabled,
-                            reminderTime: reminderEnabled ? startTime : nil
-                        )
-                        isPresented = false
+                        saveAndDismiss()
                     }
+                    .bold()
                     .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
         }
+    }
+
+    private func saveAndDismiss() {
+        let cleanTitle = title.trimmingCharacters(in: .whitespaces)
+        guard !cleanTitle.isEmpty else { return }
+
+        CalendarManager.shared.addEvent(
+            title: cleanTitle,
+            date: date,
+            startTime: startTime,
+            endTime: nil,
+            hasEndTime: false,
+            reminderEnabled: reminderEnabled,
+            reminderTime: reminderEnabled ? reminderTime : nil
+        )
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        isPresented = false
     }
 }
