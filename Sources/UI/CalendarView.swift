@@ -1,19 +1,133 @@
 import SwiftUI
 
-// MARK: - Time Picker Field (wheel nativo Apple)
+// MARK: - Time Picker Field
 
-/// Selettore orario con wheel Apple nativo — semplice e familiare per tutti.
+/// Mostra il selettore orario in base alla preferenza utente:
+/// "Apple" → wheel nativo, "Manuale" → stepper visuale con + e –
 struct TimePickerField: View {
     let label: String
     @Binding var time: Date
+    @AppStorage("timePickerMode") private var timePickerMode: String = "Apple"
 
     var body: some View {
-        DatePicker(label, selection: $time, displayedComponents: .hourAndMinute)
-            .datePickerStyle(.wheel)
-            .labelsHidden()
-            .frame(maxWidth: .infinity)
+        if timePickerMode == "Manuale" {
+            ManualTimeInputField(label: label, time: $time)
+        } else {
+            DatePicker(label, selection: $time, displayedComponents: .hourAndMinute)
+                .datePickerStyle(.wheel)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
+        }
     }
 }
+
+/// Stepper visuale per l'orario: due colonne Ore / Min con pulsanti + e –.
+/// Semplice, immediato, impossibile sbagliare.
+struct ManualTimeInputField: View {
+    let label: String
+    @Binding var time: Date
+
+    private var hour: Int {
+        Calendar.current.component(.hour, from: time)
+    }
+    private var minute: Int {
+        Calendar.current.component(.minute, from: time)
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            // Orario corrente grande al centro
+            Text(String(format: "%02d:%02d", hour, minute))
+                .font(.system(size: 48, weight: .thin, design: .rounded))
+                .monospacedDigit()
+                .frame(maxWidth: .infinity)
+
+            // Due colonne: Ore | Min
+            HStack(spacing: 24) {
+                // Ore
+                VStack(spacing: 8) {
+                    Text("Ore")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 16) {
+                        Button { adjustTime(hours: -1) } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.title2)
+                                .foregroundColor(.blue)
+                        }
+                        .buttonStyle(.plain)
+
+                        Text("\(hour)")
+                            .font(.title3.bold())
+                            .monospacedDigit()
+                            .frame(width: 32)
+
+                        Button { adjustTime(hours: 1) } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.title2)
+                                .foregroundColor(.blue)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                Text(":")
+                    .font(.title2.bold())
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 18)
+
+                // Minuti
+                VStack(spacing: 8) {
+                    Text("Min")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 16) {
+                        Button { adjustTime(minutes: -5) } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.title2)
+                                .foregroundColor(.blue)
+                        }
+                        .buttonStyle(.plain)
+
+                        Text(String(format: "%02d", minute))
+                            .font(.title3.bold())
+                            .monospacedDigit()
+                            .frame(width: 32)
+
+                        Button { adjustTime(minutes: 5) } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.title2)
+                                .foregroundColor(.blue)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(.vertical, 6)
+
+            Text("I minuti variano di 5 in 5")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 8)
+    }
+
+    private func adjustTime(hours: Int = 0, minutes: Int = 0) {
+        let cal = Calendar.current
+        var comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: time)
+        let newHour = ((comps.hour ?? 0) + hours + 24) % 24
+        let newMinute = ((comps.minute ?? 0) + minutes + 60) % 60
+        comps.hour = newHour
+        comps.minute = newMinute
+        if let newDate = cal.date(from: comps) {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            time = newDate
+        }
+    }
+}
+
 
 // MARK: - CalendarView (Apple Style + Bloom Elegance)
 
@@ -348,32 +462,17 @@ struct AppleEventCard: View {
     let event: BloomEvent
     let onTap: () -> Void
     @ObservedObject var manager = CalendarManager.shared
-    @State private var swipeOffset: CGFloat = 0
-    @State private var isDeleted = false
+    @State private var offset: CGFloat = 0
+    @State private var isOpen = false
 
-    private let deleteThreshold: CGFloat = -80
-    private let deleteButtonWidth: CGFloat = 72
+    private let deleteWidth: CGFloat = 80
 
     var body: some View {
-        ZStack(alignment: .trailing) {
-            // Sfondo rosso eliminazione
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.red)
-                .frame(width: max(0, -swipeOffset))
-                .overlay(
-                    Image(systemName: "trash.fill")
-                        .foregroundColor(.white)
-                        .font(.title3)
-                        .opacity(swipeOffset < -20 ? 1 : 0)
-                        .animation(.easeIn(duration: 0.1), value: swipeOffset),
-                    alignment: .center
-                )
-
+        HStack(spacing: 0) {
             // Card principale
             Button(action: {
-                if swipeOffset < -5 {
-                    // chiudi swipe se aperto
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { swipeOffset = 0 }
+                if isOpen {
+                    closeSwipe()
                 } else {
                     onTap()
                 }
@@ -443,46 +542,77 @@ struct AppleEventCard: View {
                 )
             }
             .buttonStyle(.plain)
-            .offset(x: swipeOffset)
-            .gesture(
-                DragGesture(minimumDistance: 10)
-                    .onChanged { value in
-                        guard !isDeleted else { return }
-                        let drag = value.translation.width
-                        if drag < 0 {
-                            swipeOffset = max(drag, -deleteButtonWidth - 10)
-                        } else if swipeOffset < 0 {
-                            swipeOffset = min(0, swipeOffset + drag)
-                        }
-                    }
-                    .onEnded { value in
-                        guard !isDeleted else { return }
-                        if swipeOffset < deleteThreshold {
-                            // Elimina con animazione
-                            isDeleted = true
-                            UINotificationFeedbackGenerator().notificationOccurred(.warning)
-                            withAnimation(.easeOut(duration: 0.25)) {
-                                swipeOffset = -UIScreen.main.bounds.width
-                            }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                manager.deleteEvent(event)
-                            }
-                        } else {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                swipeOffset = 0
-                            }
-                        }
-                    }
-            )
-            .contextMenu {
-                Button(role: .destructive) {
-                    withAnimation { manager.deleteEvent(event) }
-                } label: {
-                    Label("Elimina Impegno", systemImage: "trash")
+            .offset(x: offset)
+
+            // Tasto Elimina fisso a destra
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                    offset = -UIScreen.main.bounds.width
                 }
+                UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
+                    manager.deleteEvent(event)
+                }
+            } label: {
+                VStack(spacing: 6) {
+                    Image(systemName: "trash.fill")
+                        .font(.title3)
+                    Text("Elimina")
+                        .font(.caption2.bold())
+                }
+                .foregroundColor(.white)
+                .frame(width: deleteWidth)
+                .frame(maxHeight: .infinity)
+                .background(Color.red)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+            }
+            .offset(x: offset + deleteWidth) // segue la card durante il drag
+            .opacity(isOpen ? 1 : 0)
+        }
+        .gesture(
+            DragGesture(minimumDistance: 8, coordinateSpace: .local)
+                .onChanged { value in
+                    guard value.startLocation.x > 30 else { return } // evita conflitto con nav back
+                    let drag = value.translation.width
+                    if drag < 0 {
+                        // Resistenza naturale: più scorri più rallenta
+                        let resistance = isOpen ? drag : drag * 0.7
+                        offset = max(resistance, -deleteWidth - 8)
+                    } else if isOpen {
+                        offset = min(0, -deleteWidth + drag)
+                    }
+                }
+                .onEnded { value in
+                    let drag = value.translation.width
+                    let velocity = value.predictedEndTranslation.width
+
+                    if drag < -deleteWidth / 2 || velocity < -200 {
+                        // Snap aperto
+                        withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                            offset = -deleteWidth
+                            isOpen = true
+                        }
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    } else {
+                        // Snap chiuso
+                        closeSwipe()
+                    }
+                }
+        )
+        .contextMenu {
+            Button(role: .destructive) {
+                withAnimation { manager.deleteEvent(event) }
+            } label: {
+                Label("Elimina Impegno", systemImage: "trash")
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func closeSwipe() {
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+            offset = 0
+            isOpen = false
+        }
     }
 }
 
