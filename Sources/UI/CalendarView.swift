@@ -125,68 +125,81 @@ struct ManualTimeInputField: View {
     }
 }
 
-// MARK: - CalendarView
+// MARK: - CalendarView (Apple Style + Bloom Elegance)
 
 struct CalendarView: View {
     @StateObject var manager = CalendarManager.shared
     @State private var showingAllReminders = false
     @State private var selectedEvent: BloomEvent?
     @State private var currentMonth = Date()
-    // BUG-26 FIX: Usiamo un tipo opzionale per il sheet "aggiungi evento"
-    // così .sheet(item:) garantisce che la data sia sempre quella del giorno toccato.
-    @State private var addEventForDate: SelectedDate?
+    @State private var selectedDate = Date()
+    @State private var showingAddEvent = false
 
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
+                Color(uiColor: .systemBackground)
+                    .ignoresSafeArea()
 
-                VStack(spacing: 0) {
-                    // Month Selector Header
-                    HStack {
-                        Button { changeMonth(by: -1) } label: {
-                            Image(systemName: "chevron.left.circle.fill").font(.title2).foregroundColor(.secondary.opacity(0.5))
-                        }
-                        Spacer()
-                        Text(currentMonth.formatted(.dateTime.month(.wide).year().locale(Locale(identifier: "it_IT"))).capitalized)
-                            .font(.title2.bold())
-                        Spacer()
-                        Button { changeMonth(by: 1) } label: {
-                            Image(systemName: "chevron.right.circle.fill").font(.title2).foregroundColor(.secondary.opacity(0.5))
-                        }
-                    }
-                    .padding()
-                    .background(Color(uiColor: .systemBackground))
-
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            let days = daysInMonth(for: currentMonth)
-                            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                                ForEach(days, id: \.self) { date in
-                                    // BUG-26 FIX: Passiamo la data direttamente a DayCardRow.
-                                    // Il bottone + dentro imposta `addEventForDate = date`
-                                    // che trigghera il sheet(item:) con la data corretta.
-                                    DayCardRow(
-                                        date: date,
-                                        selectedEvent: $selectedEvent,
-                                        addEventForDate: $addEventForDate
-                                    )
-                                    .id(Calendar.current.startOfDay(for: date))
-                                }
+                ScrollView {
+                    VStack(spacing: 16) {
+                        // Selettore Mese con Frecce
+                        HStack {
+                            Button { changeMonth(by: -1) } label: {
+                                Image(systemName: "chevron.left.circle.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.secondary.opacity(0.6))
                             }
-                            .padding(.horizontal)
-                            .padding(.vertical, 12)
+                            
+                            Spacer()
+                            
+                            Text(currentMonth.formatted(.dateTime.month(.wide).year().locale(Locale(identifier: "it_IT"))).capitalized)
+                                .font(.title2.bold())
+                            
+                            Spacer()
+                            
+                            Button { changeMonth(by: 1) } label: {
+                                Image(systemName: "chevron.right.circle.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.secondary.opacity(0.6))
+                            }
                         }
-                        .background(Color.clear)
-                        .id(currentMonth)
-                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                        .onAppear {
-                            scrollToToday(proxy: proxy)
-                        }
-                        .onChange(of: currentMonth) { _, _ in
-                            scrollToToday(proxy: proxy)
-                        }
+                        .padding(.horizontal, 8)
+                        .padding(.top, 4)
+
+                        // Griglia Calendario Mese (Apple Style a 7 Colonne)
+                        CalendarMonthGrid(
+                            currentMonth: currentMonth,
+                            selectedDate: $selectedDate,
+                            manager: manager
+                        )
+                        .gesture(
+                            DragGesture(minimumDistance: 40)
+                                .onEnded { value in
+                                    if value.translation.width < -50 {
+                                        changeMonth(by: 1)
+                                    } else if value.translation.width > 50 {
+                                        changeMonth(by: -1)
+                                    }
+                                }
+                        )
+
+                        // Sezione Impegni del Giorno Selezionato (Agenda)
+                        DayAgendaSection(
+                            selectedDate: selectedDate,
+                            manager: manager,
+                            onAddEvent: {
+                                showingAddEvent = true
+                            },
+                            onSelectEvent: { event in
+                                selectedEvent = event
+                            }
+                        )
+
+                        Spacer(minLength: 100)
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
                 }
             }
             .navigationTitle("Calendario")
@@ -198,18 +211,29 @@ struct CalendarView: View {
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        withAnimation { currentMonth = Date() }
-                    } label: {
-                        Text("Oggi").bold()
+                    HStack(spacing: 14) {
+                        Button {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                currentMonth = Date()
+                                selectedDate = Date()
+                            }
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        } label: {
+                            Text("Oggi").bold()
+                        }
+                        
+                        Button {
+                            showingAddEvent = true
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.title3)
+                                .foregroundColor(.blue)
+                        }
                     }
                 }
             }
-            .sheet(item: $addEventForDate) { item in
-                AddEventView(isPresented: Binding(
-                    get: { addEventForDate != nil },
-                    set: { if !$0 { addEventForDate = nil } }
-                ), initialDate: item.date)
+            .sheet(isPresented: $showingAddEvent) {
+                AddEventView(isPresented: $showingAddEvent, initialDate: selectedDate)
             }
             .sheet(item: $selectedEvent) { event in
                 EditEventView(event: event)
@@ -220,193 +244,304 @@ struct CalendarView: View {
         }
     }
 
-    private func scrollToToday(proxy: ScrollViewProxy) {
-        let now = Date()
-        if Calendar.current.isDate(now, equalTo: currentMonth, toGranularity: .month) {
-            let todayId = Calendar.current.startOfDay(for: now)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                withAnimation { proxy.scrollTo(todayId, anchor: .top) }
-            }
-        }
-    }
-
     func changeMonth(by value: Int) {
         if let newMonth = Calendar.current.date(byAdding: .month, value: value, to: currentMonth) {
-            withAnimation { currentMonth = newMonth }
-        }
-    }
-
-    func daysInMonth(for date: Date) -> [Date] {
-        let calendar = Calendar.current
-        guard let range = calendar.range(of: .day, in: .month, for: date),
-              let firstOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: date)) else { return [] }
-        return range.compactMap { day -> Date? in
-            calendar.date(byAdding: .day, value: day - 1, to: firstOfMonth)
+            withAnimation(.easeInOut(duration: 0.22)) {
+                currentMonth = newMonth
+                let cal = Calendar.current
+                if !cal.isDate(selectedDate, equalTo: newMonth, toGranularity: .month) {
+                    if let firstDay = cal.date(from: cal.dateComponents([.year, .month], from: newMonth)) {
+                        selectedDate = firstDay
+                    }
+                }
+            }
         }
     }
 }
 
-// BUG-26 FIX: DayCardRow ora usa `addEventForDate` (Binding<Date?>) invece di
-// due state separati (selectedAddDate + showingAddEvent) che creavano la race condition.
-struct DayCardRow: View {
-    let date: Date
-    @Binding var selectedEvent: BloomEvent?
-    @Binding var addEventForDate: SelectedDate?
-    // BUG-17 FIX: @ObservedObject invece di @StateObject per i singleton
-    @ObservedObject var manager = CalendarManager.shared
+// MARK: - CalendarMonthGrid
+
+struct CalendarDaySlot: Identifiable {
+    let id = UUID()
+    let date: Date?
+}
+
+struct CalendarMonthGrid: View {
+    let currentMonth: Date
+    @Binding var selectedDate: Date
+    @ObservedObject var manager: CalendarManager
+
+    let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
+    let weekdays = ["L", "M", "M", "G", "V", "S", "D"]
 
     var body: some View {
-        let events = manager.events(for: date)
-        let isToday = Calendar.current.isDateInToday(date)
+        VStack(spacing: 10) {
+            // Intestazione Giorni della Settimana
+            HStack {
+                ForEach(0..<7, id: \.self) { idx in
+                    Text(weekdays[idx])
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .padding(.horizontal, 4)
 
-        VStack(alignment: .leading, spacing: 0) {
+            // Griglia Giorni Mese
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(daysInMonthGrid(for: currentMonth)) { slot in
+                    if let date = slot.date {
+                        let isSelected = Calendar.current.isDate(date, inSameDayAs: selectedDate)
+                        let isToday = Calendar.current.isDateInToday(date)
+                        let hasEvents = manager.hasEvents(on: date)
+
+                        Button {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                                selectedDate = date
+                            }
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        } label: {
+                            VStack(spacing: 3) {
+                                Text("\(Calendar.current.component(.day, from: date))")
+                                    .font(.system(size: 16, weight: isSelected || isToday ? .bold : .medium, design: .rounded))
+                                    .foregroundColor(isSelected ? .white : (isToday ? .blue : .primary))
+
+                                // Pallino indicatore impegni
+                                Circle()
+                                    .fill(hasEvents ? (isSelected ? .white : Color.orange) : Color.clear)
+                                    .frame(width: 5, height: 5)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 42)
+                            .background(
+                                isSelected ?
+                                Color.blue :
+                                (isToday ? Color.blue.opacity(0.12) : Color.clear)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        // Spazio vuoto
+                        Color.clear
+                            .frame(height: 42)
+                    }
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+        .padding(14)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
+    }
+
+    private func daysInMonthGrid(for date: Date) -> [CalendarDaySlot] {
+        var cal = Calendar(identifier: .gregorian)
+        cal.firstWeekday = 2 // Lunedì
+        cal.locale = Locale(identifier: "it_IT")
+
+        guard let monthInterval = cal.dateInterval(of: .month, for: date) else { return [] }
+        let firstOfMonth = monthInterval.start
+
+        let weekdayOfFirst = cal.component(.weekday, from: firstOfMonth)
+        let leadingSpaces = (weekdayOfFirst - cal.firstWeekday + 7) % 7
+
+        var slots: [CalendarDaySlot] = []
+        for _ in 0..<leadingSpaces {
+            slots.append(CalendarDaySlot(date: nil))
+        }
+
+        guard let range = cal.range(of: .day, in: .month, for: date) else { return slots }
+        for day in range {
+            if let dayDate = cal.date(byAdding: .day, value: day - 1, to: firstOfMonth) {
+                slots.append(CalendarDaySlot(date: dayDate))
+            }
+        }
+        return slots
+    }
+}
+
+// MARK: - DayAgendaSection
+
+struct DayAgendaSection: View {
+    let selectedDate: Date
+    @ObservedObject var manager: CalendarManager
+    let onAddEvent: () -> Void
+    let onSelectEvent: (BloomEvent) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Intestazione Data Selezionata
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(date.formatted(.dateTime.weekday(.wide).locale(Locale(identifier: "it_IT"))).capitalized)
+                    Text(selectedDate.formatted(.dateTime.weekday(.wide).locale(Locale(identifier: "it_IT"))).uppercased())
                         .font(.caption.bold())
-                        .foregroundColor(isToday ? .blue : .secondary)
-                    Text(date.formatted(.dateTime.day().locale(Locale(identifier: "it_IT"))))
-                        .font(.title3.bold())
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 6) {
+                        Text(selectedDate.formatted(.dateTime.day().month(.wide).locale(Locale(identifier: "it_IT"))).capitalized)
+                            .font(.title3.bold())
+
+                        if Calendar.current.isDateInToday(selectedDate) {
+                            Text("Oggi")
+                                .font(.caption2.bold())
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.blue.opacity(0.15))
+                                .foregroundColor(.blue)
+                                .clipShape(Capsule())
+                        }
+                    }
                 }
+
                 Spacer()
+
+                Button(action: onAddEvent) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus")
+                        Text("Impegno")
+                    }
+                    .font(.subheadline.bold())
+                    .foregroundColor(.blue)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.blue.opacity(0.12))
+                    .clipShape(Capsule())
+                }
             }
-            .padding(.bottom, 12)
+            .padding(.horizontal, 4)
+            .padding(.top, 4)
+
+            let events = manager.events(for: selectedDate)
 
             if events.isEmpty {
-                Text("Nessun impegno")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .italic()
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(spacing: 12) {
+                    Image(systemName: "calendar.badge.clock")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.secondary.opacity(0.7))
+                        .padding(.top, 20)
+
+                    Text("Nessun impegno in programma")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    Button(action: onAddEvent) {
+                        Text("+ Aggiungi Impegno")
+                            .font(.subheadline.bold())
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color.blue.opacity(0.12))
+                            .foregroundColor(.blue)
+                            .clipShape(Capsule())
+                    }
+                    .padding(.bottom, 20)
+                }
+                .frame(maxWidth: .infinity)
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 18))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
             } else {
-                VStack(spacing: 8) {
+                VStack(spacing: 10) {
                     ForEach(events) { event in
-                        SwipeableEventRow(event: event) {
-                            selectedEvent = event
+                        AppleEventCard(event: event) {
+                            onSelectEvent(event)
                         }
                     }
                 }
             }
-
-            HStack {
-                Spacer()
-                Button {
-                    // BUG-26 FIX: Imposta direttamente la data nel binding item.
-                    // SwiftUI crea il sheet DOPO questa assegnazione, quindi
-                    // AddEventView riceve sempre la data corretta.
-                    addEventForDate = SelectedDate(date: date)
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(.blue)
-                }
-                .padding(.top, 10)
-            }
         }
-        .padding()
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 20))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20)
-                .stroke(isToday ? Color.blue : Color.clear, lineWidth: isToday ? 1.5 : 0)
-        )
     }
 }
 
-struct EventRowView: View {
+// MARK: - AppleEventCard
+
+struct AppleEventCard: View {
     let event: BloomEvent
     let onTap: () -> Void
-    // BUG-17 FIX: @ObservedObject invece di @StateObject
     @ObservedObject var manager = CalendarManager.shared
 
     var body: some View {
         Button(action: onTap) {
-            HStack {
+            HStack(spacing: 12) {
+                // Orario
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(event.title)
-                        .font(.subheadline.bold())
-                        .foregroundColor(.primary)
-                        .strikethrough(event.isCompleted)
-                        .lineLimit(1)
                     Text(event.startTime.formatted(.dateTime.hour().minute()))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+
+                    if event.hasEndTime, let endTime = event.endTime {
+                        Text(endTime.formatted(.dateTime.hour().minute()))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                .frame(width: 55, alignment: .leading)
+
+                // Barra colorata verticale
+                Rectangle()
+                    .fill(event.isCompleted ? Color.green : Color.blue)
+                    .frame(width: 3.5, height: 38)
+                    .clipShape(Capsule())
+
+                // Titolo & Notifica
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(event.title)
+                        .font(.body.weight(.medium))
+                        .foregroundColor(event.isCompleted ? .secondary : .primary)
+                        .strikethrough(event.isCompleted)
+                        .lineLimit(2)
+
+                    if !event.reminders.isEmpty || event.reminderId != nil {
+                        HStack(spacing: 4) {
+                            Image(systemName: "bell.fill")
+                                .font(.caption2)
+                                .foregroundColor(.orange)
+                            Text("Promemoria")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 Spacer()
 
-                if !event.reminders.isEmpty || event.reminderId != nil {
-                    Image(systemName: "bell.fill")
-                        .font(.caption2)
-                        .foregroundColor(.orange)
-                }
-
+                // Cerchietto completamento
                 Button {
-                    withAnimation { manager.toggleComplete(event) }
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        manager.toggleComplete(event)
+                    }
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 } label: {
                     Image(systemName: event.isCompleted ? "checkmark.circle.fill" : "circle")
+                        .font(.title2)
                         .foregroundColor(event.isCompleted ? .green : .secondary)
                 }
                 .buttonStyle(.plain)
             }
-            .padding(10)
-            .background(Color.primary.opacity(0.05))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .padding(14)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
-    }
-}
-
-struct SwipeableEventRow: View {
-    let event: BloomEvent
-    let onTap: () -> Void
-    // BUG-17 FIX: @ObservedObject
-    @ObservedObject var manager = CalendarManager.shared
-    @State private var offset: CGFloat = 0
-    // BUG-09 FIX: Flag per prevenire la doppia eliminazione
-    @State private var isDeleted = false
-
-    var body: some View {
-        ZStack(alignment: .trailing) {
-            Button {
-                guard !isDeleted else { return } // BUG-09 FIX
-                isDeleted = true
-                withAnimation { manager.deleteEvent(event) }
+        .contextMenu {
+            Button(role: .destructive) {
+                withAnimation {
+                    manager.deleteEvent(event)
+                }
             } label: {
-                Image(systemName: "trash")
-                    .foregroundColor(.white)
-                    .frame(width: 60)
-                    .frame(maxHeight: .infinity)
-                    .background(Color.red)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                Label("Elimina Impegno", systemImage: "trash")
             }
-            .buttonStyle(.plain)
-
-            EventRowView(event: event, onTap: onTap)
-                .background(Color(uiColor: .secondarySystemGroupedBackground))
-                .offset(x: offset)
-                .gesture(
-                    DragGesture()
-                        .onChanged { gesture in
-                            if gesture.translation.width < 0 {
-                                offset = gesture.translation.width
-                            }
-                        }
-                        .onEnded { gesture in
-                            withAnimation {
-                                if offset < -50 {
-                                    if gesture.translation.width < -100 {
-                                        guard !isDeleted else { return } // BUG-09 FIX
-                                        isDeleted = true
-                                        manager.deleteEvent(event)
-                                    } else {
-                                        offset = -70
-                                    }
-                                } else {
-                                    offset = 0
-                                }
-                            }
-                        }
-                )
         }
     }
 }
@@ -566,6 +701,7 @@ struct AddEventView: View {
     let initialDate: Date
     @State private var title = ""
     @State private var startTime: Date
+    @State private var reminderEnabled = false
 
     init(isPresented: Binding<Bool>, initialDate: Date) {
         self._isPresented = isPresented
@@ -585,11 +721,13 @@ struct AddEventView: View {
         NavigationStack {
             Form {
                 Section("Cosa") {
-                    TextField("Esempio: Visita medica", text: $title)
+                    TextField("Esempio: Visita medica, Riunione...", text: $title)
                 }
                 Section("Quando (\(initialDate.formatted(.dateTime.day().month(.wide).locale(Locale(identifier: "it_IT")))))") {
-                    // Feature: usa TimePickerField per rispettare la preferenza utente
                     TimePickerField(label: "Orario", time: $startTime)
+                }
+                Section("Notifiche") {
+                    Toggle("Attiva Promemoria", isOn: $reminderEnabled)
                 }
             }
             .navigationTitle("Aggiungi Impegno")
@@ -598,18 +736,20 @@ struct AddEventView: View {
                 ToolbarItem(placement: .navigationBarLeading) { Button("Annulla") { isPresented = false } }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Salva") {
-                        CalendarManager.shared.addEvent(title: title, date: initialDate, startTime: startTime, endTime: nil, hasEndTime: false, reminderEnabled: false)
+                        CalendarManager.shared.addEvent(
+                            title: title,
+                            date: initialDate,
+                            startTime: startTime,
+                            endTime: nil,
+                            hasEndTime: false,
+                            reminderEnabled: reminderEnabled,
+                            reminderTime: reminderEnabled ? startTime : nil
+                        )
                         isPresented = false
                     }
-                    .disabled(title.isEmpty)
+                    .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
         }
     }
-}
-
-// MARK: - Selected Date Wrapper per sheet(item:)
-struct SelectedDate: Identifiable {
-    let date: Date
-    var id: Date { date }
 }
