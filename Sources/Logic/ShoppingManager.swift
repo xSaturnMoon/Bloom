@@ -173,6 +173,7 @@ class ShoppingManager: ObservableObject {
                     self.friendListStatus = "Errore di rete o permessi (RLS): \(error.localizedDescription)"
                 }
                 print("Errore fetch lista amico: \(error)")
+            }
         }
     }
 
