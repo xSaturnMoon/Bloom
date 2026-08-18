@@ -2,13 +2,15 @@ import SwiftUI
 
 struct ShoppingView: View {
     @StateObject var manager = ShoppingManager.shared
-    @State private var showingAddItem = false
     @State private var showingShare = false
     @State private var showingFriendsLists = false
     @State private var quickItemName = ""
-    @State private var quickItemQty = ""
+    @State private var selectedQty: String = "1"
+    @FocusState private var isNameFocused: Bool
     @State private var showingClearAllAlert = false
     @State private var showingClearCheckedAlert = false
+    
+    let quantityPresets = ["1", "2", "3", "4", "5", "500g", "1kg", "1L", "2L", "1 conf.", "2 conf."]
     
     var isQuickAddValid: Bool {
         !quickItemName.trimmingCharacters(in: .whitespaces).isEmpty
@@ -42,11 +44,11 @@ struct ShoppingView: View {
                     }
                     .padding(.horizontal)
 
-                    // WIDGET AGGIUNTA RAPIDA INLINE
+                    // WIDGET AGGIUNTA RAPIDA INLINE (con selettori rapidi e auto-focus)
                     Section {
                         HStack(spacing: 12) {
-                            // Sinistra: Colonna con i due campi di testo
-                            VStack(spacing: 8) {
+                            // Sinistra: Campo Nome + Chip Quantità Rapidi
+                            VStack(alignment: .leading, spacing: 8) {
                                 HStack(spacing: 8) {
                                     Image(systemName: "cart.fill.badge.plus")
                                         .font(.subheadline)
@@ -54,20 +56,7 @@ struct ShoppingView: View {
                                         .frame(width: 20)
                                     
                                     TextField("Nome prodotto...", text: $quickItemName)
-                                        .submitLabel(.next)
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 10)
-                                .background(Color(uiColor: .secondarySystemGroupedBackground))
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                                
-                                HStack(spacing: 8) {
-                                    Image(systemName: "number")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 20)
-                                    
-                                    TextField("Quantità (es. 2, 500g, 1 conf.)", text: $quickItemQty)
+                                        .focused($isNameFocused)
                                         .submitLabel(.done)
                                         .onSubmit {
                                             addQuickItem()
@@ -77,6 +66,31 @@ struct ShoppingView: View {
                                 .padding(.vertical, 10)
                                 .background(Color(uiColor: .secondarySystemGroupedBackground))
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
+                                
+                                // Selettori Quantità Rapidi (Chips)
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 6) {
+                                        ForEach(quantityPresets, id: \.self) { preset in
+                                            Button {
+                                                if selectedQty == preset {
+                                                    selectedQty = "1"
+                                                } else {
+                                                    selectedQty = preset
+                                                }
+                                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                            } label: {
+                                                Text(preset)
+                                                    .font(.caption.bold())
+                                                    .padding(.horizontal, 10)
+                                                    .padding(.vertical, 6)
+                                                    .background(selectedQty == preset ? Color.blue : Color(uiColor: .secondarySystemGroupedBackground))
+                                                    .foregroundColor(selectedQty == preset ? .white : .primary)
+                                                    .clipShape(Capsule())
+                                            }
+                                        }
+                                    }
+                                    .padding(.vertical, 2)
+                                }
                             }
                             
                             // Destra: Mega Tasto + ad altezza combinata
@@ -91,7 +105,7 @@ struct ShoppingView: View {
                                         .font(.system(size: 26, weight: .bold))
                                         .foregroundColor(isQuickAddValid ? .white : .secondary)
                                 }
-                                .frame(width: 60)
+                                .frame(width: 58)
                             }
                             .disabled(!isQuickAddValid)
                         }
@@ -224,13 +238,6 @@ struct ShoppingView: View {
                         } label: {
                             Image(systemName: "person.badge.plus")
                         }
-                        
-                        Button {
-                            showingAddItem.toggle()
-                        } label: {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.title3)
-                        }
                     }
                 }
             }
@@ -250,14 +257,17 @@ struct ShoppingView: View {
             } message: {
                 Text("Sei sicuro/a di voler eliminare solo i prodotti già completati?")
             }
-            .sheet(isPresented: $showingAddItem) {
-                AddItemView(isPresented: $showingAddItem)
-            }
             .sheet(isPresented: $showingShare) {
                 ShareView(isPresented: $showingShare)
             }
             .sheet(isPresented: $showingFriendsLists) {
                 FriendsListView(isPresented: $showingFriendsLists)
+            }
+            .onAppear {
+                manager.startLiveSync()
+            }
+            .onDisappear {
+                manager.stopLiveSync()
             }
         }
     }
@@ -265,12 +275,13 @@ struct ShoppingView: View {
     private func addQuickItem() {
         let name = quickItemName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return }
-        let qty = quickItemQty.trimmingCharacters(in: .whitespaces)
+        let qty = selectedQty.isEmpty ? "1" : selectedQty
         
         withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
             manager.addItem(name: name, quantity: qty)
             quickItemName = ""
-            quickItemQty = ""
+            // Mantieni il focus attivo per inserire altri prodotti senza toccare di nuovo
+            isNameFocused = true
         }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
@@ -332,39 +343,6 @@ struct ShoppingItemCard: View {
             RoundedRectangle(cornerRadius: 18)
                 .stroke(.white.opacity(0.1), lineWidth: 1)
         )
-    }
-}
-
-struct AddItemView: View {
-    @Binding var isPresented: Bool
-    @State private var name = ""
-    @State private var qty = ""
-    @ObservedObject var manager = ShoppingManager.shared
-    
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Dettagli Prodotto") {
-                    TextField("Nome prodotto", text: $name)
-                    TextField("Quantità", text: $qty)
-                        .keyboardType(.decimalPad)
-                }
-            }
-            .navigationTitle("Aggiungi Prodotto")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Annulla") { isPresented = false }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Salva") {
-                        manager.addItem(name: name, quantity: qty)
-                        isPresented = false
-                    }
-                    .disabled(name.isEmpty)
-                }
-            }
-        }
     }
 }
 
@@ -687,10 +665,12 @@ struct FriendDetailView: View {
         }
         .onAppear {
             manager.fetchItemsForFriend(friend)
+            manager.startLiveSync()
         }
         .onDisappear {
             manager.observingFriend = nil
             manager.observingItems = []
+            manager.stopLiveSync()
         }
     }
 }

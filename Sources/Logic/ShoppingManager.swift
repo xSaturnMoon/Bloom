@@ -187,6 +187,72 @@ class ShoppingManager: ObservableObject {
         }
     }
 
+    // MARK: - Live Realtime Sync
+
+    private var syncTimer: AnyCancellable?
+
+    func startLiveSync() {
+        fetchFromCloudSilently()
+        if let friend = observingFriend {
+            fetchItemsForFriendSilently(friend)
+        }
+        syncTimer?.cancel()
+        syncTimer = Timer.publish(every: 2.0, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                self?.fetchFromCloudSilently()
+                if let friend = self?.observingFriend {
+                    self?.fetchItemsForFriendSilently(friend)
+                }
+            }
+    }
+
+    func stopLiveSync() {
+        syncTimer?.cancel()
+        syncTimer = nil
+    }
+
+    func fetchFromCloudSilently() {
+        guard sb.isAuthenticated else { return }
+        Task {
+            do {
+                let sbItems = try await sb.fetchShoppingItems()
+                let cloudItems = sbItems.map { $0.toShoppingItem() }
+                await MainActor.run {
+                    if self.items != cloudItems {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            self.items = cloudItems
+                        }
+                        self.saveLocalItems()
+                    }
+                }
+            } catch {
+                // Silently ignore background polling errors
+            }
+        }
+    }
+
+    func fetchItemsForFriendSilently(_ friend: Friend) {
+        guard sb.isAuthenticated else { return }
+        Task {
+            do {
+                if let profile = try await sb.findProfileByCode(friend.code) {
+                    let sbItems = try await sb.fetchShoppingItems(forUserId: profile.userId)
+                    let domainItems = sbItems.map { $0.toShoppingItem() }
+                    await MainActor.run {
+                        if self.observingItems != domainItems {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                self.observingItems = domainItems
+                            }
+                        }
+                    }
+                }
+            } catch {
+                // Silently ignore background polling errors
+            }
+        }
+    }
+
     // MARK: - Cloud Sync
 
     private func syncToCloud(_ item: ShoppingItem) {
