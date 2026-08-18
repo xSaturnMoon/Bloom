@@ -31,8 +31,8 @@ struct ManualTimeInputField: View {
 
     @State private var hourText: String = ""
     @State private var minuteText: String = ""
-    @State private var hourHasBeenEdited = false
-    @State private var minuteHasBeenEdited = false
+    @State private var clearHourOnNextType = false
+    @State private var clearMinuteOnNextType = false
     @FocusState private var focusedField: TimeField?
 
     enum TimeField: Hashable {
@@ -61,13 +61,13 @@ struct ManualTimeInputField: View {
                         )
                         .onChange(of: focusedField) { _, newField in
                             if newField == .hour {
-                                hourHasBeenEdited = false
+                                clearHourOnNextType = !hourText.isEmpty
                             } else if newField == .minute {
-                                minuteHasBeenEdited = false
+                                clearMinuteOnNextType = !minuteText.isEmpty
                             }
                         }
-                        .onChange(of: hourText) { _, newValue in
-                            handleHourChange(newValue)
+                        .onChange(of: hourText) { oldValue, newValue in
+                            handleHourInput(old: oldValue, new: newValue)
                         }
 
                     Text("Ore")
@@ -94,8 +94,8 @@ struct ManualTimeInputField: View {
                             RoundedRectangle(cornerRadius: 14)
                                 .stroke(focusedField == .minute ? Color.blue : Color.clear, lineWidth: 2)
                         )
-                        .onChange(of: minuteText) { _, newValue in
-                            handleMinuteChange(newValue)
+                        .onChange(of: minuteText) { oldValue, newValue in
+                            handleMinuteInput(old: oldValue, new: newValue)
                         }
 
                     Text("Minuti")
@@ -109,71 +109,70 @@ struct ManualTimeInputField: View {
         }
         .onAppear {
             if !isNewEvent {
-                syncFromDate()
+                let cal = Calendar.current
+                let h = cal.component(.hour, from: time)
+                let m = cal.component(.minute, from: time)
+                hourText = String(format: "%02d", h)
+                minuteText = String(format: "%02d", m)
             }
         }
     }
 
-    private func syncFromDate() {
-        let cal = Calendar.current
-        let h = cal.component(.hour, from: time)
-        let m = cal.component(.minute, from: time)
-        hourText = String(format: "%02d", h)
-        minuteText = String(format: "%02d", m)
-    }
+    private func handleHourInput(old: String, new: String) {
+        let digits = new.filter { $0.isNumber }
 
-    private func handleHourChange(_ raw: String) {
-        var digits = raw.filter { $0.isNumber }
-
-        // Se non è stato ancora modificato durante questa sessione di focus e l'utente ha digitato una cifra,
-        // sovrascrive il testo precedente direttamente!
-        if !hourHasBeenEdited && digits.count > 1 {
-            if let lastDigit = digits.last {
-                digits = String(lastDigit)
+        var effective = digits
+        if clearHourOnNextType && digits.count > old.filter({ $0.isNumber }).count {
+            if let lastChar = digits.last {
+                effective = String(lastChar)
             }
-        }
-        hourHasBeenEdited = true
-
-        if digits.count > 2 {
-            digits = String(digits.prefix(2))
+            clearHourOnNextType = false
+        } else if clearHourOnNextType && digits.count < old.filter({ $0.isNumber }).count {
+            clearHourOnNextType = false
         }
 
-        if hourText != digits {
-            hourText = digits
+        if effective.count > 2 {
+            effective = String(effective.prefix(2))
         }
 
-        if let h = Int(digits) {
+        if hourText != effective {
+            hourText = effective
+        }
+
+        if let h = Int(effective) {
             let validH = min(h, 23)
             updateTime(hour: validH, minute: Int(minuteText) ?? 0)
 
             // Auto-focus al campo minuti se l'utente ha inserito 2 cifre o un numero da 3 a 9
-            if digits.count == 2 || (digits.count == 1 && h >= 3) {
-                minuteHasBeenEdited = false
+            if effective.count == 2 || (effective.count == 1 && h >= 3) {
+                clearMinuteOnNextType = !minuteText.isEmpty
                 focusedField = .minute
             }
         }
     }
 
-    private func handleMinuteChange(_ raw: String) {
-        var digits = raw.filter { $0.isNumber }
+    private func handleMinuteInput(old: String, new: String) {
+        let digits = new.filter { $0.isNumber }
 
-        // Sovrascrive il testo precedente alla prima cifra digitata
-        if !minuteHasBeenEdited && digits.count > 1 {
-            if let lastDigit = digits.last {
-                digits = String(lastDigit)
+        var effective = digits
+        if clearMinuteOnNextType && digits.count > old.filter({ $0.isNumber }).count {
+            if let lastChar = digits.last {
+                effective = String(lastChar)
             }
-        }
-        minuteHasBeenEdited = true
-
-        if digits.count > 2 {
-            digits = String(digits.prefix(2))
+            clearMinuteOnNextType = false
+        } else if clearMinuteOnNextType && digits.count < old.filter({ $0.isNumber }).count {
+            clearMinuteOnNextType = false
         }
 
-        if minuteText != digits {
-            minuteText = digits
+        if effective.count > 2 {
+            effective = String(effective.prefix(2))
         }
 
-        if let m = Int(digits) {
+        if minuteText != effective {
+            minuteText = effective
+        }
+
+        if let m = Int(effective) {
             let validM = min(m, 59)
             updateTime(hour: Int(hourText) ?? 0, minute: validM)
         }
