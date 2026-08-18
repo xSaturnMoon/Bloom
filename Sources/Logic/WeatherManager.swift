@@ -409,11 +409,8 @@ class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         let isDay = res.current.is_day == 1
         let currentCondition = weatherCodeToCondition(res.current.weather_code, isDay: isDay)
 
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withFullDate, .withTime, .withColonSeparatorInTime]
-
-        let sunriseDate = res.daily.sunrise.first.flatMap { isoFormatter.date(from: $0) }
-        let sunsetDate = res.daily.sunset.first.flatMap { isoFormatter.date(from: $0) }
+        let sunriseDate = res.daily.sunrise.first.flatMap { parseFlexibleDate($0) }
+        let sunsetDate = res.daily.sunset.first.flatMap { parseFlexibleDate($0) }
 
         let current = CurrentWeather(
             temp: res.current.temperature_2m,
@@ -434,12 +431,12 @@ class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             sunset: sunsetDate
         )
 
-        // Hourly parsing (prossime 36 ore)
+        // Hourly parsing (include tutte le ore future)
         var hourly: [HourlyWeather] = []
         let now = Date().addingTimeInterval(-3600)
         for i in 0..<min(res.hourly.time.count, res.hourly.temperature_2m.count) {
             let timeString = res.hourly.time[i]
-            guard let time = isoFormatter.date(from: timeString), time >= now else { continue }
+            guard let time = parseFlexibleDate(timeString), time >= now else { continue }
 
             let hourIsDay = res.hourly.is_day?[i] == 1
             let code = res.hourly.weather_code[i]
@@ -454,18 +451,13 @@ class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegate {
                 rainProbability: rainProb,
                 isDay: hourIsDay
             ))
-
-            if hourly.count >= 24 { break }
         }
 
         // Daily parsing (7 giorni)
         var daily: [DailyWeather] = []
-        let dayDateFormatter = DateFormatter()
-        dayDateFormatter.dateFormat = "yyyy-MM-dd"
-
         for i in 0..<res.daily.time.count {
             let dateString = res.daily.time[i]
-            guard let date = dayDateFormatter.date(from: dateString) else { continue }
+            guard let date = parseFlexibleDate(dateString) else { continue }
 
             let code = res.daily.weather_code[i]
             let tMin = res.daily.temperature_2m_min[i]
@@ -473,8 +465,8 @@ class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             let rainProb = res.daily.precipitation_probability_max?[i] ?? 0
             let uvMax = res.daily.uv_index_max?[i] ?? 0.0
             let windMax = res.daily.wind_speed_10m_max?[i] ?? 0.0
-            let daySunrise = i < res.daily.sunrise.count ? isoFormatter.date(from: res.daily.sunrise[i]) : nil
-            let daySunset = i < res.daily.sunset.count ? isoFormatter.date(from: res.daily.sunset[i]) : nil
+            let daySunrise = i < res.daily.sunrise.count ? parseFlexibleDate(res.daily.sunrise[i]) : nil
+            let daySunset = i < res.daily.sunset.count ? parseFlexibleDate(res.daily.sunset[i]) : nil
 
             daily.append(DailyWeather(
                 date: date,
@@ -500,6 +492,33 @@ class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             daily: daily,
             lastUpdated: Date()
         )
+    }
+
+    private func parseFlexibleDate(_ str: String) -> Date? {
+        let trimmed = str.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return nil }
+
+        let formats = [
+            "yyyy-MM-dd'T'HH:mm",
+            "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd'T'HH:mm:ssZ",
+            "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
+            "yyyy-MM-dd"
+        ]
+
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = TimeZone.current
+
+        for format in formats {
+            df.dateFormat = format
+            if let date = df.date(from: trimmed) {
+                return date
+            }
+        }
+
+        let iso = ISO8601DateFormatter()
+        return iso.date(from: trimmed)
     }
 
     private func weatherCodeToText(_ code: Int) -> String {

@@ -7,6 +7,7 @@ struct WeatherView: View {
     @State private var selectedLocationId: UUID?
     @State private var showingAddCitySheet = false
     @State private var showingManageCitiesSheet = false
+    @State private var selectedDay: DailyWeather?
 
     private var currentLocation: WeatherLocation? {
         if let id = selectedLocationId, let loc = manager.locations.first(where: { $0.id == id }) {
@@ -27,7 +28,7 @@ struct WeatherView: View {
                     }
                 } else if let loc = currentLocation {
                     ScrollView(showsIndicators: false) {
-                        VStack(spacing: 16) {
+                        VStack(spacing: 20) {
                             // City Selector Horizontal Bar
                             CityPillSelector(
                                 locations: manager.locations,
@@ -44,16 +45,16 @@ struct WeatherView: View {
                             .padding(.top, 8)
 
                             if let weather = manager.weatherData[loc.id] {
-                                // Hero Header
+                                // Hero Header (Spazioso e pulito)
                                 WeatherHeroCard(weather: weather)
 
-                                // Previsioni Orarie
+                                // Previsioni Nelle 24 Ore
                                 HourlyForecastBloomCard(weather: weather)
 
-                                // Previsioni 7 Giorni
-                                DailyForecastBloomCard(weather: weather)
+                                // Previsioni 7 Giorni (Interattive, cliccabili)
+                                DailyForecastBloomCard(weather: weather, selectedDay: $selectedDay)
 
-                                // Dettagli Utili
+                                // Dettagli Utili (6 riquadri puliti)
                                 WeatherDetailsBloomGrid(weather: weather)
                             } else {
                                 LoadingWeatherBloomCard(cityName: loc.name)
@@ -65,6 +66,11 @@ struct WeatherView: View {
                     }
                     .refreshable {
                         await manager.refreshAll()
+                    }
+                    .sheet(item: $selectedDay) { day in
+                        if let weather = manager.weatherData[loc.id] {
+                            DayDetailSheet(day: day, city: weather.city, hourlyData: weather.hourly)
+                        }
                     }
                 }
             }
@@ -168,142 +174,143 @@ struct CityPillSelector: View {
     }
 }
 
-// MARK: - Hero Weather Card
+// MARK: - Hero Weather Card (Pulita, Spaziosa e Chiara)
 
 struct WeatherHeroCard: View {
     let weather: WeatherData
 
     var body: some View {
-        VStack(spacing: 12) {
-            // City Header
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(weather.city)
-                            .font(.title2.bold())
-                            .foregroundColor(.primary)
-
-                        if weather.isCurrentLocation {
-                            Image(systemName: "location.fill")
-                                .font(.caption)
-                                .foregroundColor(.blue)
-                        }
-                    }
-
-                    if let region = weather.adminRegion, !region.isEmpty, region != weather.city {
-                        Text(region)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Spacer()
-
-                // Condition Icon
-                WeatherIconBloom(condition: weather.current.condition)
-                    .font(.system(size: 40))
-            }
-
-            // Main Temperature Display
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("\(Int(round(weather.current.temp)))°")
-                    .font(.system(size: 64, weight: .light, design: .rounded))
-                    .foregroundColor(.primary)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(weather.current.description)
-                        .font(.headline.weight(.semibold))
+        VStack(spacing: 16) {
+            // City Header & Location
+            VStack(spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(weather.city)
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
                         .foregroundColor(.primary)
 
-                    HStack(spacing: 8) {
-                        Text("Min \(Int(round(weather.current.tempMinToday)))°")
-                            .foregroundStyle(.secondary)
-                        Text("•")
-                            .foregroundStyle(.secondary)
-                        Text("Max \(Int(round(weather.current.tempMaxToday)))°")
-                            .foregroundStyle(.secondary)
+                    if weather.isCurrentLocation {
+                        Image(systemName: "location.fill")
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
                     }
-                    .font(.subheadline)
                 }
 
-                Spacer()
-            }
-
-            // Info Banner
-            HStack {
-                Label("Percepita \(Int(round(weather.current.feelsLike)))°", systemImage: "thermometer.medium")
-                    .font(.caption.bold())
-                    .foregroundColor(.blue)
-
-                Spacer()
-
-                if weather.current.rainSum > 0 {
-                    Label("\(String(format: "%.1f", weather.current.rainSum)) mm pioggia", systemImage: "drop.fill")
-                        .font(.caption.bold())
-                        .foregroundColor(.cyan)
-                } else {
-                    Text("Aggiornato alle \(weather.lastUpdated.formatted(.dateTime.hour().minute()))")
-                        .font(.caption2)
+                if let region = weather.adminRegion, !region.isEmpty, region != weather.city {
+                    Text(region)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(.top, 4)
+
+            // Big Temperature & Main Icon
+            HStack(spacing: 16) {
+                WeatherIconBloom(condition: weather.current.condition)
+                    .font(.system(size: 56))
+
+                Text("\(Int(round(weather.current.temp)))°")
+                    .font(.system(size: 72, weight: .light, design: .rounded))
+                    .foregroundColor(.primary)
+            }
+
+            // Condition & Temp Range Pill
+            VStack(spacing: 6) {
+                Text(weather.current.description)
+                    .font(.title3.weight(.semibold))
+                    .foregroundColor(.primary)
+
+                HStack(spacing: 10) {
+                    Text("Max: \(Int(round(weather.current.tempMaxToday)))°")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+
+                    Text("•")
+                        .foregroundStyle(.secondary)
+
+                    Text("Min: \(Int(round(weather.current.tempMinToday)))°")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+
+                    Text("•")
+                        .foregroundStyle(.secondary)
+
+                    Text("Percepita: \(Int(round(weather.current.feelsLike)))°")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.blue)
+                }
+            }
         }
-        .padding(18)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 22)
+        .padding(.horizontal, 16)
         .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(Color.white.opacity(0.12), lineWidth: 1)
         )
     }
 }
 
-// MARK: - Previsioni Orarie
+// MARK: - Previsioni Nelle 24 Ore
 
 struct HourlyForecastBloomCard: View {
     let weather: WeatherData
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("PREVISIONI NELLE 24 ORE", systemImage: "clock.fill")
-                .font(.caption.bold())
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 4)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label("PREVISIONI NELLE 24 ORE", systemImage: "clock.fill")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
-                    ForEach(Array(weather.hourly.prefix(24).enumerated()), id: \.element.id) { index, hour in
-                        VStack(spacing: 8) {
-                            Text(index == 0 ? "Ora" : hour.time.formatted(.dateTime.hour().minute()))
-                                .font(.caption.weight(index == 0 ? .bold : .medium))
-                                .foregroundColor(index == 0 ? .blue : .secondary)
+                Spacer()
 
-                            WeatherIconBloom(condition: hour.condition)
-                                .font(.title3)
-                                .frame(height: 24)
-
-                            if hour.rainProbability > 0 {
-                                Text("\(hour.rainProbability)%")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundColor(.blue)
-                            } else {
-                                Text("-")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.secondary.opacity(0.4))
-                            }
-
-                            Text("\(Int(round(hour.temp)))°")
-                                .font(.subheadline.bold())
-                                .foregroundColor(.primary)
-                        }
-                        .frame(width: 52)
-                        .padding(.vertical, 8)
-                        .background(index == 0 ? Color.blue.opacity(0.08) : Color.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
+                if let maxRain = weather.hourly.prefix(24).map(\.rainProbability).max(), maxRain > 0 {
+                    Text("Pioggia fino a \(maxRain)%")
+                        .font(.caption2.bold())
+                        .foregroundColor(.blue)
                 }
-                .padding(.horizontal, 4)
+            }
+            .padding(.horizontal, 4)
+
+            if weather.hourly.isEmpty {
+                Text("Previsioni orarie in fase di caricamento...")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 10)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 14) {
+                        ForEach(Array(weather.hourly.prefix(24).enumerated()), id: \.element.id) { index, hour in
+                            VStack(spacing: 8) {
+                                Text(index == 0 ? "Ora" : hour.time.formatted(.dateTime.hour().minute()))
+                                    .font(.caption.weight(index == 0 ? .bold : .medium))
+                                    .foregroundColor(index == 0 ? .blue : .secondary)
+
+                                WeatherIconBloom(condition: hour.condition)
+                                    .font(.title3)
+                                    .frame(height: 24)
+
+                                if hour.rainProbability > 0 {
+                                    Text("\(hour.rainProbability)%")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundColor(.blue)
+                                } else {
+                                    Spacer().frame(height: 12)
+                                }
+
+                                Text("\(Int(round(hour.temp)))°")
+                                    .font(.subheadline.bold())
+                                    .foregroundColor(.primary)
+                            }
+                            .frame(width: 54)
+                            .padding(.vertical, 8)
+                            .background(index == 0 ? Color.blue.opacity(0.08) : Color.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                }
             }
         }
         .padding(16)
@@ -316,64 +323,86 @@ struct HourlyForecastBloomCard: View {
     }
 }
 
-// MARK: - Previsioni 7 Giorni
+// MARK: - Previsioni 7 Giorni (Interattive e Cliccabili)
 
 struct DailyForecastBloomCard: View {
     let weather: WeatherData
+    @Binding var selectedDay: DailyWeather?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Label("I PROSSIMI 7 GIORNI", systemImage: "calendar")
-                .font(.caption.bold())
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
-                .padding(.bottom, 10)
+            HStack {
+                Label("PREVISIONI A 7 GIORNI", systemImage: "calendar")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Text("Tocca per i dettagli")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary.opacity(0.7))
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 12)
 
             ForEach(Array(weather.daily.enumerated()), id: \.element.id) { index, day in
-                HStack(spacing: 12) {
-                    // Giorno
-                    Text(index == 0 ? "Oggi" : (index == 1 ? "Domani" : day.date.formatted(.dateTime.weekday(.wide).locale(Locale(identifier: "it_IT"))).capitalized))
-                        .font(.body.weight(index == 0 ? .bold : .medium))
-                        .foregroundColor(.primary)
-                        .frame(width: 90, alignment: .leading)
+                Button {
+                    selectedDay = day
+                } label: {
+                    HStack(spacing: 12) {
+                        // Giorno
+                        Text(index == 0 ? "Oggi" : (index == 1 ? "Domani" : day.date.formatted(.dateTime.weekday(.wide).locale(Locale(identifier: "it_IT"))).capitalized))
+                            .font(.body.weight(index == 0 ? .bold : .medium))
+                            .foregroundColor(.primary)
+                            .frame(width: 90, alignment: .leading)
 
-                    // Icona
-                    WeatherIconBloom(condition: day.condition)
-                        .font(.title3)
-                        .frame(width: 28)
+                        // Icona
+                        WeatherIconBloom(condition: day.condition)
+                            .font(.title3)
+                            .frame(width: 28)
 
-                    // Descrizione breve
-                    Text(day.description)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    // Probabilità pioggia se presente
-                    if day.rainProbability > 0 {
-                        Text("\(day.rainProbability)%")
-                            .font(.caption.bold())
-                            .foregroundColor(.blue)
-                            .frame(width: 32)
-                    }
-
-                    // Temperature Min - Max
-                    HStack(spacing: 6) {
-                        Text("\(Int(round(day.tempMin)))°")
+                        // Descrizione breve
+                        Text(day.description)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                        Text("–")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text("\(Int(round(day.tempMax)))°")
-                            .font(.subheadline.bold())
-                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        // Probabilità pioggia se presente
+                        if day.rainProbability > 0 {
+                            Text("\(day.rainProbability)%")
+                                .font(.caption.bold())
+                                .foregroundColor(.blue)
+                                .frame(width: 32)
+                        } else {
+                            Spacer().frame(width: 32)
+                        }
+
+                        // Temperature Min - Max
+                        HStack(spacing: 6) {
+                            Text("\(Int(round(day.tempMin)))°")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Text("–")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text("\(Int(round(day.tempMax)))°")
+                                .font(.subheadline.bold())
+                                .foregroundColor(.primary)
+                        }
+                        .frame(width: 65, alignment: .trailing)
+
+                        // Chevron to indicate tap
+                        Image(systemName: "chevron.right")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
                     }
-                    .frame(width: 60, alignment: .trailing)
+                    .padding(.vertical, 11)
+                    .padding(.horizontal, 16)
+                    .contentShape(Rectangle())
                 }
-                .padding(.vertical, 10)
-                .padding(.horizontal, 16)
+                .buttonStyle(.plain)
 
                 if index < weather.daily.count - 1 {
                     Divider()
@@ -391,7 +420,163 @@ struct DailyForecastBloomCard: View {
     }
 }
 
-// MARK: - Dettagli Utili Grid
+// MARK: - Day Detail Sheet (Meteo Completo del Giorno Selezionato)
+
+struct DayDetailSheet: View {
+    let day: DailyWeather
+    let city: String
+    let hourlyData: [HourlyWeather]
+    @Environment(\.dismiss) var dismiss
+
+    var hoursForDay: [HourlyWeather] {
+        hourlyData.filter { Calendar.current.isDate($0.time, inSameDayAs: day.date) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color(uiColor: .systemGroupedBackground)
+                    .ignoresSafeArea()
+
+                ScrollView {
+                    VStack(spacing: 16) {
+                        // Summary Hero Card
+                        VStack(spacing: 14) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(city)
+                                        .font(.subheadline.bold())
+                                        .foregroundColor(.blue)
+                                    Text(day.description)
+                                        .font(.title2.bold())
+                                        .foregroundColor(.primary)
+                                }
+
+                                Spacer()
+
+                                WeatherIconBloom(condition: day.condition)
+                                    .font(.system(size: 44))
+                            }
+
+                            Divider()
+
+                            HStack(spacing: 16) {
+                                DayStatBox(title: "MASSIMA", value: "\(Int(round(day.tempMax)))°", color: .primary)
+                                DayStatBox(title: "MINIMA", value: "\(Int(round(day.tempMin)))°", color: .secondary)
+                                DayStatBox(title: "PIOGGIA", value: "\(day.rainProbability)%", color: .blue)
+                                DayStatBox(title: "INDICE UV", value: "\(Int(round(day.uvIndexMax)))", color: .orange)
+                            }
+
+                            if let sunrise = day.sunrise, let sunset = day.sunset {
+                                Divider()
+
+                                HStack {
+                                    Label("Alba: \(sunrise.formatted(.dateTime.hour().minute()))", systemImage: "sunrise.fill")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(.secondary)
+
+                                    Spacer()
+
+                                    Label("Tramonto: \(sunset.formatted(.dateTime.hour().minute()))", systemImage: "sunset.fill")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .padding(16)
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 18))
+                        .padding(.horizontal, 16)
+                        .padding(.top, 10)
+
+                        // Meteo Orario della Giornata
+                        if !hoursForDay.isEmpty {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Label("METEO ORARIO DELLA GIORNATA", systemImage: "clock.fill")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 20)
+
+                                VStack(spacing: 0) {
+                                    ForEach(hoursForDay) { hour in
+                                        HStack {
+                                            Text(hour.time.formatted(.dateTime.hour().minute()))
+                                                .font(.subheadline.bold())
+                                                .frame(width: 55, alignment: .leading)
+
+                                            WeatherIconBloom(condition: hour.condition)
+                                                .font(.title3)
+                                                .frame(width: 28)
+
+                                            if hour.rainProbability > 0 {
+                                                Text("\(hour.rainProbability)%")
+                                                    .font(.caption.bold())
+                                                    .foregroundColor(.blue)
+                                                    .frame(width: 36)
+                                            } else {
+                                                Spacer().frame(width: 36)
+                                            }
+
+                                            Text(hour.description)
+                                                .font(.subheadline)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(1)
+
+                                            Spacer()
+
+                                            Text("\(Int(round(hour.temp)))°")
+                                                .font(.headline.weight(.semibold))
+                                                .frame(width: 40, alignment: .trailing)
+                                        }
+                                        .padding(.vertical, 11)
+                                        .padding(.horizontal, 16)
+
+                                        if hour.id != hoursForDay.last?.id {
+                                            Divider().padding(.leading, 16)
+                                        }
+                                    }
+                                }
+                                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: 18))
+                                .padding(.horizontal, 16)
+                            }
+                        }
+
+                        Spacer(minLength: 30)
+                    }
+                }
+            }
+            .navigationTitle(day.date.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(Locale(identifier: "it_IT"))).capitalized)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Chiudi") { dismiss() }
+                        .bold()
+                }
+            }
+        }
+    }
+}
+
+struct DayStatBox: View {
+    let title: String
+    let value: String
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Text(title)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.title3.bold())
+                .foregroundColor(color)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - Dettagli Utili Grid (6 Card Pulite)
 
 struct WeatherDetailsBloomGrid: View {
     let weather: WeatherData
@@ -757,5 +942,6 @@ struct EmptyWeatherBloomView: View {
         }
     }
 }
+
 
 
