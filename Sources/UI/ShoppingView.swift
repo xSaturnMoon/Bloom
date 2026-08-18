@@ -5,10 +5,14 @@ struct ShoppingView: View {
     @State private var showingAddItem = false
     @State private var showingShare = false
     @State private var showingFriendsLists = false
-    @State private var newItemName = ""
-    @State private var newItemQty = ""
+    @State private var quickItemName = ""
+    @State private var quickItemQty = ""
     @State private var showingClearAllAlert = false
     @State private var showingClearCheckedAlert = false
+    
+    var isQuickAddValid: Bool {
+        !quickItemName.trimmingCharacters(in: .whitespaces).isEmpty
+    }
     
     // Computata per separare gli elementi attivi da quelli completati
     var activeItems: [ShoppingItem] {
@@ -38,13 +42,78 @@ struct ShoppingView: View {
                     }
                     .padding(.horizontal)
 
+                    // WIDGET AGGIUNTA RAPIDA INLINE
+                    Section {
+                        HStack(spacing: 12) {
+                            // Sinistra: Colonna con i due campi di testo
+                            VStack(spacing: 8) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "cart.fill.badge.plus")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 20)
+                                    
+                                    TextField("Nome prodotto...", text: $quickItemName)
+                                        .submitLabel(.next)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                
+                                HStack(spacing: 8) {
+                                    Image(systemName: "number")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 20)
+                                    
+                                    TextField("Quantità (es. 2, 500g, 1 conf.)", text: $quickItemQty)
+                                        .submitLabel(.done)
+                                        .onSubmit {
+                                            addQuickItem()
+                                        }
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                            
+                            // Destra: Mega Tasto + ad altezza combinata
+                            Button {
+                                addQuickItem()
+                            } label: {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .fill(isQuickAddValid ? Color.blue : Color.gray.opacity(0.25))
+                                    
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 26, weight: .bold))
+                                        .foregroundColor(isQuickAddValid ? .white : .secondary)
+                                }
+                                .frame(width: 60)
+                            }
+                            .disabled(!isQuickAddValid)
+                        }
+                        .padding(12)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 18))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18)
+                                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                        )
+                        .listRowInsets(EdgeInsets(top: 6, leading: 20, bottom: 12, trailing: 20))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                    }
+
                     if manager.items.isEmpty {
                         Section {
                             VStack(spacing: 20) {
                                 Image(systemName: "cart.badge.plus")
                                     .font(.system(size: 60))
                                     .foregroundStyle(.secondary)
-                                    .padding(.top, 50)
+                                    .padding(.top, 40)
                                 Text("La tua lista è vuota")
                                     .font(.headline)
                                     .foregroundStyle(.secondary)
@@ -191,6 +260,19 @@ struct ShoppingView: View {
                 FriendsListView(isPresented: $showingFriendsLists)
             }
         }
+    }
+    
+    private func addQuickItem() {
+        let name = quickItemName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        let qty = quickItemQty.trimmingCharacters(in: .whitespaces)
+        
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+            manager.addItem(name: name, quantity: qty)
+            quickItemName = ""
+            quickItemQty = ""
+        }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
     
     func statCard(title: String, value: String, icon: String, color: Color) -> some View {
@@ -507,26 +589,102 @@ struct FriendDetailView: View {
     let friend: Friend
     @ObservedObject var manager = ShoppingManager.shared
     
+    var activeObservingItems: [ShoppingItem] {
+        manager.observingItems.filter { !$0.isChecked }
+    }
+    
+    var completedObservingItems: [ShoppingItem] {
+        manager.observingItems.filter { $0.isChecked }
+    }
+    
     var body: some View {
-        List {
-            if manager.observingItems.isEmpty {
-                Text(manager.friendListStatus)
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(manager.observingItems) { item in
-                    HStack {
-                        Image(systemName: item.isChecked ? "checkmark.circle.fill" : "circle")
-                            .foregroundColor(item.isChecked ? .green : .secondary)
-                        Text(item.name)
-                        Spacer()
-                        Text(item.quantity)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+        ZStack {
+            Color(uiColor: .systemBackground)
+                .ignoresSafeArea()
+            
+            List {
+                if manager.observingItems.isEmpty {
+                    Section {
+                        VStack(spacing: 16) {
+                            if manager.friendListStatus.isEmpty || manager.friendListStatus == "In caricamento..." {
+                                ProgressView()
+                                    .controlSize(.large)
+                                    .padding(.top, 40)
+                                Text("Caricamento lista...")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Image(systemName: "tray.fill")
+                                    .font(.system(size: 50))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.top, 40)
+                                Text(manager.friendListStatus)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                } else {
+                    if !activeObservingItems.isEmpty {
+                        Section {
+                            ForEach(activeObservingItems) { item in
+                                FriendShoppingItemCard(item: item)
+                                    .listRowInsets(EdgeInsets(top: 6, leading: 20, bottom: 6, trailing: 20))
+                                    .listRowBackground(Color.clear)
+                                    .listRowSeparator(.hidden)
+                            }
+                        }
+                    }
+                    
+                    if !completedObservingItems.isEmpty {
+                        Section {
+                            HStack {
+                                Text("PRODOTTI PRESI")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(.secondary)
+                                    .padding(.leading, 20)
+                                Spacer()
+                                Rectangle()
+                                    .frame(height: 1)
+                                    .foregroundStyle(.secondary.opacity(0.2))
+                            }
+                            .padding(.top, 16)
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            
+                            ForEach(completedObservingItems) { item in
+                                FriendShoppingItemCard(item: item)
+                                    .listRowInsets(EdgeInsets(top: 6, leading: 20, bottom: 6, trailing: 20))
+                                    .listRowBackground(Color.clear)
+                                    .listRowSeparator(.hidden)
+                                    .opacity(0.6)
+                            }
+                        }
                     }
                 }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .refreshable {
+                manager.fetchItemsForFriend(friend)
+            }
         }
         .navigationTitle(friend.name)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    manager.fetchItemsForFriend(friend)
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+            }
+        }
         .onAppear {
             manager.fetchItemsForFriend(friend)
         }
@@ -534,5 +692,47 @@ struct FriendDetailView: View {
             manager.observingFriend = nil
             manager.observingItems = []
         }
+    }
+}
+
+struct FriendShoppingItemCard: View {
+    var item: ShoppingItem
+    @ObservedObject var manager = ShoppingManager.shared
+    
+    var body: some View {
+        HStack(spacing: 15) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.name)
+                    .font(.headline)
+                    .strikethrough(item.isChecked)
+                    .foregroundStyle(item.isChecked ? .secondary : .primary)
+                
+                if !item.quantity.isEmpty {
+                    Text(item.quantity)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            
+            Spacer()
+            
+            Button {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                    manager.toggleObservingItem(item)
+                }
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            } label: {
+                Image(systemName: item.isChecked ? "checkmark.circle.fill" : "circle")
+                    .font(.title2)
+                    .foregroundColor(item.isChecked ? .green : .secondary)
+            }
+        }
+        .padding()
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(.white.opacity(0.1), lineWidth: 1)
+        )
     }
 }

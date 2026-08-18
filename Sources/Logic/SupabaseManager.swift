@@ -498,6 +498,13 @@ class SupabaseManager {
         )
     }
 
+    func updateShoppingItemChecked(id: UUID, isChecked: Bool) async throws {
+        var req = try makeRequest(path: "/rest/v1/shopping_items?id=eq.\(id.uuidString)", method: "PATCH")
+        let body: [String: Any] = ["is_checked": isChecked]
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let _: Data = try await performRequest(req: req) { $0 }
+    }
+
     func deleteShoppingItem(id: UUID) async throws {
         try await delete(path: "/rest/v1/shopping_items?id=eq.\(id.uuidString)")
     }

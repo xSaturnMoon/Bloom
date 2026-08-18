@@ -173,6 +173,15 @@ class ShoppingManager: ObservableObject {
                     self.friendListStatus = "Errore di rete o permessi (RLS): \(error.localizedDescription)"
                 }
                 print("Errore fetch lista amico: \(error)")
+        }
+    }
+
+    func toggleObservingItem(_ item: ShoppingItem) {
+        if let index = observingItems.firstIndex(where: { $0.id == item.id }) {
+            observingItems[index].isChecked.toggle()
+            let updated = observingItems[index]
+            Task {
+                try? await sb.updateShoppingItemChecked(id: updated.id, isChecked: updated.isChecked)
             }
         }
     }
