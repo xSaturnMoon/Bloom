@@ -83,7 +83,6 @@ struct ManualTimeInputField: View {
         guard !raw.isEmpty else { isInvalid = false; return }
 
         // Interpreta l'input: "920" → h=9 m=20, "1840" → h=18 m=40
-        let padded = raw.count <= 2 ? raw : raw // se solo ore
         let h: Int
         let m: Int
 

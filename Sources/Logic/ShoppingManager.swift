@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import SwiftUI
 
 class ShoppingManager: ObservableObject {
     static let shared = ShoppingManager()

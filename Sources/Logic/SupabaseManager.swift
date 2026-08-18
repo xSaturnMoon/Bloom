@@ -352,7 +352,7 @@ class SupabaseManager {
 
         // Risposta senza token → conferma email richiesta. NON fare signIn silenzioso.
         if let r = try? JSONDecoder().decode(SupabaseAuthResponse.self, from: data),
-           let user = r.user {
+           r.user != nil {
             // L'utente esiste ma non ha token: email non confermata
             throw SupabaseError.emailConfirmationRequired
         }
@@ -390,10 +390,6 @@ class SupabaseManager {
 
         isRefreshing = true
         defer {
-            let result: Result<Void, Error>
-            // Questo viene eseguito quando usciamo dalla funzione
-            // ma Swift non ha un modo diretto di catturare l'errore nel defer
-            // Usiamo il pattern di rilascio delle continuations dopo il blocco
             isRefreshing = false
         }
 
@@ -448,7 +444,7 @@ class SupabaseManager {
     }
 
     func updatePassword(newPassword: String) async throws {
-        guard let token = accessToken else { throw SupabaseError.notAuthenticated }
+        guard accessToken != nil else { throw SupabaseError.notAuthenticated }
         let body: [String: Any] = ["password": newPassword]
         var req = try makeRequest(path: "/auth/v1/user", method: "PUT")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
