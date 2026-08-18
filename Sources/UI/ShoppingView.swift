@@ -5,12 +5,12 @@ struct ShoppingView: View {
     @State private var showingShare = false
     @State private var showingFriendsLists = false
     @State private var quickItemName = ""
-    @State private var selectedQty: String = "1"
+    @State private var selectedQty: String = "ND"
     @FocusState private var isNameFocused: Bool
     @State private var showingClearAllAlert = false
     @State private var showingClearCheckedAlert = false
     
-    let quantityPresets = ["1", "2", "3", "4", "5", "500g", "1kg", "1L", "2L", "1 conf.", "2 conf."]
+    let quantityPresets = ["ND", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
     
     var isQuickAddValid: Bool {
         !quickItemName.trimmingCharacters(in: .whitespaces).isEmpty
@@ -21,8 +21,11 @@ struct ShoppingView: View {
         manager.items.filter { !$0.isChecked }
     }
     
+    // Ordinamento alfabetico per i prodotti completati
     var completedItems: [ShoppingItem] {
-        manager.items.filter { $0.isChecked }
+        manager.items
+            .filter { $0.isChecked }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
     
     var body: some View {
@@ -47,7 +50,7 @@ struct ShoppingView: View {
                     // WIDGET AGGIUNTA RAPIDA INLINE (con selettori rapidi e auto-focus)
                     Section {
                         HStack(spacing: 12) {
-                            // Sinistra: Campo Nome + Chip Quantità Rapidi
+                            // Sinistra: Campo Nome + Bottoni Quantità Quadrati Smussati
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack(spacing: 8) {
                                     Image(systemName: "cart.fill.badge.plus")
@@ -67,29 +70,32 @@ struct ShoppingView: View {
                                 .background(Color(uiColor: .secondarySystemGroupedBackground))
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                                 
-                                // Selettori Quantità Rapidi (Chips)
+                                // Selettori Quantità Rapidi (Quadretti stile Bloom)
                                 ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 6) {
+                                    HStack(spacing: 8) {
                                         ForEach(quantityPresets, id: \.self) { preset in
                                             Button {
-                                                if selectedQty == preset {
-                                                    selectedQty = "1"
-                                                } else {
-                                                    selectedQty = preset
-                                                }
+                                                selectedQty = preset
                                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                             } label: {
                                                 Text(preset)
-                                                    .font(.caption.bold())
-                                                    .padding(.horizontal, 10)
-                                                    .padding(.vertical, 6)
-                                                    .background(selectedQty == preset ? Color.blue : Color(uiColor: .secondarySystemGroupedBackground))
+                                                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                                                    .frame(width: 44, height: 44)
+                                                    .background(
+                                                        selectedQty == preset ?
+                                                        Color.blue :
+                                                        Color(uiColor: .secondarySystemGroupedBackground)
+                                                    )
                                                     .foregroundColor(selectedQty == preset ? .white : .primary)
-                                                    .clipShape(Capsule())
+                                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                                    .overlay(
+                                                        RoundedRectangle(cornerRadius: 12)
+                                                            .stroke(selectedQty == preset ? Color.blue.opacity(0.8) : Color.white.opacity(0.12), lineWidth: 1)
+                                                    )
                                             }
                                         }
                                     }
-                                    .padding(.vertical, 2)
+                                    .padding(.vertical, 4)
                                 }
                             }
                             
@@ -206,6 +212,7 @@ struct ShoppingView: View {
                 .scrollContentBackground(.hidden)
             }
             .navigationTitle("Spesa")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     HStack(spacing: 15) {
@@ -275,7 +282,7 @@ struct ShoppingView: View {
     private func addQuickItem() {
         let name = quickItemName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return }
-        let qty = selectedQty.isEmpty ? "1" : selectedQty
+        let qty = (selectedQty == "ND") ? "" : selectedQty
         
         withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
             manager.addItem(name: name, quantity: qty)
@@ -572,7 +579,9 @@ struct FriendDetailView: View {
     }
     
     var completedObservingItems: [ShoppingItem] {
-        manager.observingItems.filter { $0.isChecked }
+        manager.observingItems
+            .filter { $0.isChecked }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
     
     var body: some View {
