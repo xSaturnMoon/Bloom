@@ -7,11 +7,12 @@ import SwiftUI
 struct TimePickerField: View {
     let label: String
     @Binding var time: Date
+    var isNewEvent: Bool = false
     @AppStorage("timePickerMode") private var timePickerMode: String = "Apple"
 
     var body: some View {
         if timePickerMode == "Manuale" {
-            ManualTimeInputField(label: label, time: $time)
+            ManualTimeInputField(label: label, time: $time, isNewEvent: isNewEvent)
         } else {
             DatePicker(label, selection: $time, displayedComponents: .hourAndMinute)
                 .datePickerStyle(.wheel)
@@ -26,9 +27,12 @@ struct TimePickerField: View {
 struct ManualTimeInputField: View {
     let label: String
     @Binding var time: Date
+    var isNewEvent: Bool = false
 
     @State private var hourText: String = ""
     @State private var minuteText: String = ""
+    @State private var hourHasBeenEdited = false
+    @State private var minuteHasBeenEdited = false
     @FocusState private var focusedField: TimeField?
 
     enum TimeField: Hashable {
@@ -55,6 +59,13 @@ struct ManualTimeInputField: View {
                             RoundedRectangle(cornerRadius: 14)
                                 .stroke(focusedField == .hour ? Color.blue : Color.clear, lineWidth: 2)
                         )
+                        .onChange(of: focusedField) { _, newField in
+                            if newField == .hour {
+                                hourHasBeenEdited = false
+                            } else if newField == .minute {
+                                minuteHasBeenEdited = false
+                            }
+                        }
                         .onChange(of: hourText) { _, newValue in
                             handleHourChange(newValue)
                         }
@@ -97,7 +108,9 @@ struct ManualTimeInputField: View {
             .padding(.vertical, 6)
         }
         .onAppear {
-            syncFromDate()
+            if !isNewEvent {
+                syncFromDate()
+            }
         }
     }
 
@@ -110,12 +123,24 @@ struct ManualTimeInputField: View {
     }
 
     private func handleHourChange(_ raw: String) {
-        let digits = raw.filter { $0.isNumber }
-        if digits.count > 2 {
-            hourText = String(digits.prefix(2))
-            return
+        var digits = raw.filter { $0.isNumber }
+
+        // Se non è stato ancora modificato durante questa sessione di focus e l'utente ha digitato una cifra,
+        // sovrascrive il testo precedente direttamente!
+        if !hourHasBeenEdited && digits.count > 1 {
+            if let lastDigit = digits.last {
+                digits = String(lastDigit)
+            }
         }
-        hourText = digits
+        hourHasBeenEdited = true
+
+        if digits.count > 2 {
+            digits = String(digits.prefix(2))
+        }
+
+        if hourText != digits {
+            hourText = digits
+        }
 
         if let h = Int(digits) {
             let validH = min(h, 23)
@@ -123,18 +148,30 @@ struct ManualTimeInputField: View {
 
             // Auto-focus al campo minuti se l'utente ha inserito 2 cifre o un numero da 3 a 9
             if digits.count == 2 || (digits.count == 1 && h >= 3) {
+                minuteHasBeenEdited = false
                 focusedField = .minute
             }
         }
     }
 
     private func handleMinuteChange(_ raw: String) {
-        let digits = raw.filter { $0.isNumber }
-        if digits.count > 2 {
-            minuteText = String(digits.prefix(2))
-            return
+        var digits = raw.filter { $0.isNumber }
+
+        // Sovrascrive il testo precedente alla prima cifra digitata
+        if !minuteHasBeenEdited && digits.count > 1 {
+            if let lastDigit = digits.last {
+                digits = String(lastDigit)
+            }
         }
-        minuteText = digits
+        minuteHasBeenEdited = true
+
+        if digits.count > 2 {
+            digits = String(digits.prefix(2))
+        }
+
+        if minuteText != digits {
+            minuteText = digits
+        }
 
         if let m = Int(digits) {
             let validM = min(m, 59)
@@ -598,14 +635,14 @@ struct EditEventView: View {
 
                 Section("Quando") {
                     DatePicker("Giorno", selection: $date, displayedComponents: .date)
-                    TimePickerField(label: "Orario", time: $startTime)
+                    TimePickerField(label: "Orario", time: $startTime, isNewEvent: false)
                 }
 
                 Section("Promemoria") {
                     Toggle("🔔 Avvisami con notifica", isOn: $reminderEnabled)
 
                     if reminderEnabled {
-                        TimePickerField(label: "Orario Notifica", time: $reminderTime)
+                        TimePickerField(label: "Orario Notifica", time: $reminderTime, isNewEvent: false)
                     }
                 }
 
@@ -755,14 +792,14 @@ struct AddEventView: View {
 
                 Section("Quando") {
                     DatePicker("Giorno", selection: $date, displayedComponents: .date)
-                    TimePickerField(label: "Orario", time: $startTime)
+                    TimePickerField(label: "Orario", time: $startTime, isNewEvent: true)
                 }
 
                 Section("Promemoria") {
                     Toggle("🔔 Avvisami con notifica", isOn: $reminderEnabled)
 
                     if reminderEnabled {
-                        TimePickerField(label: "Orario Notifica", time: $reminderTime)
+                        TimePickerField(label: "Orario Notifica", time: $reminderTime, isNewEvent: true)
                     }
                 }
             }
