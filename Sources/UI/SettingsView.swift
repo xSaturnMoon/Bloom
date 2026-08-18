@@ -114,7 +114,7 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
-                        Label("Digita l'orario con la tastiera (es. 920 → 09:20)", systemImage: "keyboard")
+                        Label("Digita ore e minuti con il tastierino numerico", systemImage: "keyboard")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

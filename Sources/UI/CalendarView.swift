@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - Time Picker Field
 
 /// Mostra il selettore orario in base alla preferenza utente:
-/// "Apple" → wheel nativo, "Manuale" → stepper visuale con + e –
+/// "Apple" → wheel nativo, "Manuale" → digitazione rapida con tastierino numerico (Ore : Minuti)
 struct TimePickerField: View {
     let label: String
     @Binding var time: Date
@@ -21,113 +21,137 @@ struct TimePickerField: View {
     }
 }
 
-/// Stepper visuale per l'orario: due colonne Ore / Min con pulsanti + e –.
-/// Semplice, immediato, impossibile sbagliare.
+/// Inserimento orario manuale scrivendo direttamente con la tastiera numerica:
+/// Due caselle grandi e pulite [ ORE ] : [ MINUTI ].
 struct ManualTimeInputField: View {
     let label: String
     @Binding var time: Date
 
-    private var hour: Int {
-        Calendar.current.component(.hour, from: time)
-    }
-    private var minute: Int {
-        Calendar.current.component(.minute, from: time)
+    @State private var hourText: String = ""
+    @State private var minuteText: String = ""
+    @FocusState private var focusedField: TimeField?
+
+    enum TimeField: Hashable {
+        case hour
+        case minute
     }
 
     var body: some View {
-        VStack(spacing: 12) {
-            // Orario corrente grande al centro
-            Text(String(format: "%02d:%02d", hour, minute))
-                .font(.system(size: 48, weight: .thin, design: .rounded))
-                .monospacedDigit()
-                .frame(maxWidth: .infinity)
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                Spacer()
 
-            // Due colonne: Ore | Min
-            HStack(spacing: 24) {
-                // Ore
-                VStack(spacing: 8) {
+                // ORE BOX
+                VStack(spacing: 4) {
+                    TextField("00", text: $hourText)
+                        .keyboardType(.numberPad)
+                        .focused($focusedField, equals: .hour)
+                        .multilineTextAlignment(.center)
+                        .font(.system(size: 36, weight: .semibold, design: .rounded))
+                        .frame(width: 82, height: 60)
+                        .background(Color(uiColor: .tertiarySystemFill))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(focusedField == .hour ? Color.blue : Color.clear, lineWidth: 2)
+                        )
+                        .onChange(of: hourText) { _, newValue in
+                            handleHourChange(newValue)
+                        }
+
                     Text("Ore")
                         .font(.caption.bold())
                         .foregroundStyle(.secondary)
-
-                    HStack(spacing: 16) {
-                        Button { adjustTime(hours: -1) } label: {
-                            Image(systemName: "minus.circle.fill")
-                                .font(.title2)
-                                .foregroundColor(.blue)
-                        }
-                        .buttonStyle(.plain)
-
-                        Text("\(hour)")
-                            .font(.title3.bold())
-                            .monospacedDigit()
-                            .frame(width: 32)
-
-                        Button { adjustTime(hours: 1) } label: {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.title2)
-                                .foregroundColor(.blue)
-                        }
-                        .buttonStyle(.plain)
-                    }
                 }
 
                 Text(":")
-                    .font(.title2.bold())
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
                     .foregroundStyle(.secondary)
-                    .padding(.top, 18)
+                    .padding(.bottom, 20)
 
-                // Minuti
-                VStack(spacing: 8) {
-                    Text("Min")
+                // MINUTI BOX
+                VStack(spacing: 4) {
+                    TextField("00", text: $minuteText)
+                        .keyboardType(.numberPad)
+                        .focused($focusedField, equals: .minute)
+                        .multilineTextAlignment(.center)
+                        .font(.system(size: 36, weight: .semibold, design: .rounded))
+                        .frame(width: 82, height: 60)
+                        .background(Color(uiColor: .tertiarySystemFill))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(focusedField == .minute ? Color.blue : Color.clear, lineWidth: 2)
+                        )
+                        .onChange(of: minuteText) { _, newValue in
+                            handleMinuteChange(newValue)
+                        }
+
+                    Text("Minuti")
                         .font(.caption.bold())
                         .foregroundStyle(.secondary)
-
-                    HStack(spacing: 16) {
-                        Button { adjustTime(minutes: -5) } label: {
-                            Image(systemName: "minus.circle.fill")
-                                .font(.title2)
-                                .foregroundColor(.blue)
-                        }
-                        .buttonStyle(.plain)
-
-                        Text(String(format: "%02d", minute))
-                            .font(.title3.bold())
-                            .monospacedDigit()
-                            .frame(width: 32)
-
-                        Button { adjustTime(minutes: 5) } label: {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.title2)
-                                .foregroundColor(.blue)
-                        }
-                        .buttonStyle(.plain)
-                    }
                 }
+
+                Spacer()
             }
             .padding(.vertical, 6)
-
-            Text("I minuti variano di 5 in 5")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 8)
+        .onAppear {
+            syncFromDate()
+        }
     }
 
-    private func adjustTime(hours: Int = 0, minutes: Int = 0) {
+    private func syncFromDate() {
         let cal = Calendar.current
-        var comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: time)
-        let newHour = ((comps.hour ?? 0) + hours + 24) % 24
-        let newMinute = ((comps.minute ?? 0) + minutes + 60) % 60
-        comps.hour = newHour
-        comps.minute = newMinute
+        let h = cal.component(.hour, from: time)
+        let m = cal.component(.minute, from: time)
+        hourText = String(format: "%02d", h)
+        minuteText = String(format: "%02d", m)
+    }
+
+    private func handleHourChange(_ raw: String) {
+        let digits = raw.filter { $0.isNumber }
+        if digits.count > 2 {
+            hourText = String(digits.prefix(2))
+            return
+        }
+        hourText = digits
+
+        if let h = Int(digits) {
+            let validH = min(h, 23)
+            updateTime(hour: validH, minute: Int(minuteText) ?? 0)
+
+            // Auto-focus al campo minuti se l'utente ha inserito 2 cifre o un numero da 3 a 9
+            if digits.count == 2 || (digits.count == 1 && h >= 3) {
+                focusedField = .minute
+            }
+        }
+    }
+
+    private func handleMinuteChange(_ raw: String) {
+        let digits = raw.filter { $0.isNumber }
+        if digits.count > 2 {
+            minuteText = String(digits.prefix(2))
+            return
+        }
+        minuteText = digits
+
+        if let m = Int(digits) {
+            let validM = min(m, 59)
+            updateTime(hour: Int(hourText) ?? 0, minute: validM)
+        }
+    }
+
+    private func updateTime(hour: Int, minute: Int) {
+        let cal = Calendar.current
+        var comps = cal.dateComponents([.year, .month, .day], from: time)
+        comps.hour = min(max(hour, 0), 23)
+        comps.minute = min(max(minute, 0), 59)
         if let newDate = cal.date(from: comps) {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
             time = newDate
         }
     }
 }
-
 
 // MARK: - CalendarView (Apple Style + Bloom Elegance)
 
@@ -145,66 +169,161 @@ struct CalendarView: View {
                 Color(uiColor: .systemBackground)
                     .ignoresSafeArea()
 
-                ScrollView {
-                    VStack(spacing: 16) {
-                        // Selettore Mese con Frecce
-                        HStack {
-                            Button { changeMonth(by: -1) } label: {
-                                Image(systemName: "chevron.left.circle.fill")
-                                    .font(.title2)
-                                    .foregroundColor(.secondary.opacity(0.6))
-                            }
-                            
-                            Spacer()
-                            
-                            Text(currentMonth.formatted(.dateTime.month(.wide).year().locale(Locale(identifier: "it_IT"))).capitalized)
-                                .font(.title2.bold())
-                            
-                            Spacer()
-                            
-                            Button { changeMonth(by: 1) } label: {
-                                Image(systemName: "chevron.right.circle.fill")
-                                    .font(.title2)
-                                    .foregroundColor(.secondary.opacity(0.6))
-                            }
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.top, 4)
+                List {
+                    // SEZIONE 1: Mese con Frecce e Griglia Calendario
+                    Section {
+                        VStack(spacing: 14) {
+                            HStack {
+                                Button { changeMonth(by: -1) } label: {
+                                    Image(systemName: "chevron.left.circle.fill")
+                                        .font(.title2)
+                                        .foregroundColor(.secondary.opacity(0.6))
+                                }
+                                .buttonStyle(.plain)
 
-                        // Griglia Calendario Mese (Apple Style a 7 Colonne)
-                        CalendarMonthGrid(
-                            currentMonth: currentMonth,
-                            selectedDate: $selectedDate,
-                            manager: manager
-                        )
-                        .gesture(
-                            DragGesture(minimumDistance: 40)
-                                .onEnded { value in
-                                    if value.translation.width < -50 {
-                                        changeMonth(by: 1)
-                                    } else if value.translation.width > 50 {
-                                        changeMonth(by: -1)
+                                Spacer()
+
+                                Text(currentMonth.formatted(.dateTime.month(.wide).year().locale(Locale(identifier: "it_IT"))).capitalized)
+                                    .font(.title2.bold())
+
+                                Spacer()
+
+                                Button { changeMonth(by: 1) } label: {
+                                    Image(systemName: "chevron.right.circle.fill")
+                                        .font(.title2)
+                                        .foregroundColor(.secondary.opacity(0.6))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, 4)
+
+                            CalendarMonthGrid(
+                                currentMonth: currentMonth,
+                                selectedDate: $selectedDate,
+                                manager: manager
+                            )
+                        }
+                        .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 8, trailing: 16))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                    }
+
+                    // SEZIONE 2: Intestazione Agenda Giorno
+                    Section {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(selectedDate.formatted(.dateTime.weekday(.wide).locale(Locale(identifier: "it_IT"))).uppercased())
+                                    .font(.caption.bold())
+                                    .foregroundStyle(.secondary)
+
+                                HStack(spacing: 6) {
+                                    Text(selectedDate.formatted(.dateTime.day().month(.wide).locale(Locale(identifier: "it_IT"))).capitalized)
+                                        .font(.title3.bold())
+
+                                    if Calendar.current.isDateInToday(selectedDate) {
+                                        Text("Oggi")
+                                            .font(.caption2.bold())
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.blue.opacity(0.15))
+                                            .foregroundColor(.blue)
+                                            .clipShape(Capsule())
                                     }
                                 }
-                        )
-
-                        // Sezione Impegni del Giorno Selezionato (Agenda)
-                        DayAgendaSection(
-                            selectedDate: selectedDate,
-                            manager: manager,
-                            onAddEvent: {
-                                showingAddEvent = true
-                            },
-                            onSelectEvent: { event in
-                                selectedEvent = event
                             }
-                        )
 
+                            Spacer()
+
+                            Button {
+                                showingAddEvent = true
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "plus")
+                                    Text("Impegno")
+                                }
+                                .font(.subheadline.bold())
+                                .foregroundColor(.blue)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.blue.opacity(0.12))
+                                .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                    }
+
+                    // SEZIONE 3: Lista Impegni o Empty State
+                    let events = manager.events(for: selectedDate)
+                    if events.isEmpty {
+                        Section {
+                            VStack(spacing: 12) {
+                                Image(systemName: "calendar.badge.clock")
+                                    .font(.system(size: 40))
+                                    .foregroundStyle(.secondary.opacity(0.7))
+                                    .padding(.top, 20)
+
+                                Text("Nessun impegno in programma")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+
+                                Button {
+                                    showingAddEvent = true
+                                } label: {
+                                    Text("+ Aggiungi Impegno")
+                                        .font(.subheadline.bold())
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 8)
+                                        .background(Color.blue.opacity(0.12))
+                                        .foregroundColor(.blue)
+                                        .clipShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.bottom, 20)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .background(.ultraThinMaterial)
+                            .clipShape(RoundedRectangle(cornerRadius: 18))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 18)
+                                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                            )
+                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                        }
+                    } else {
+                        Section {
+                            ForEach(events) { event in
+                                AppleEventCard(event: event) {
+                                    selectedEvent = event
+                                }
+                                .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button(role: .destructive) {
+                                        withAnimation {
+                                            manager.deleteEvent(event)
+                                        }
+                                    } label: {
+                                        Label("Elimina", systemImage: "trash")
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Section {
                         Spacer(minLength: 100)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 10)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
             .navigationTitle("Calendario")
             .navigationBarTitleDisplayMode(.inline)
@@ -361,257 +480,86 @@ struct CalendarMonthGrid: View {
     }
 }
 
-// MARK: - DayAgendaSection
-
-struct DayAgendaSection: View {
-    let selectedDate: Date
-    @ObservedObject var manager: CalendarManager
-    let onAddEvent: () -> Void
-    let onSelectEvent: (BloomEvent) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Intestazione Data Selezionata
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(selectedDate.formatted(.dateTime.weekday(.wide).locale(Locale(identifier: "it_IT"))).uppercased())
-                        .font(.caption.bold())
-                        .foregroundStyle(.secondary)
-
-                    HStack(spacing: 6) {
-                        Text(selectedDate.formatted(.dateTime.day().month(.wide).locale(Locale(identifier: "it_IT"))).capitalized)
-                            .font(.title3.bold())
-
-                        if Calendar.current.isDateInToday(selectedDate) {
-                            Text("Oggi")
-                                .font(.caption2.bold())
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.blue.opacity(0.15))
-                                .foregroundColor(.blue)
-                                .clipShape(Capsule())
-                        }
-                    }
-                }
-
-                Spacer()
-
-                Button(action: onAddEvent) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "plus")
-                        Text("Impegno")
-                    }
-                    .font(.subheadline.bold())
-                    .foregroundColor(.blue)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.blue.opacity(0.12))
-                    .clipShape(Capsule())
-                }
-            }
-            .padding(.horizontal, 4)
-            .padding(.top, 4)
-
-            let events = manager.events(for: selectedDate)
-
-            if events.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "calendar.badge.clock")
-                        .font(.system(size: 40))
-                        .foregroundStyle(.secondary.opacity(0.7))
-                        .padding(.top, 20)
-
-                    Text("Nessun impegno in programma")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-
-                    Button(action: onAddEvent) {
-                        Text("+ Aggiungi Impegno")
-                            .font(.subheadline.bold())
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(Color.blue.opacity(0.12))
-                            .foregroundColor(.blue)
-                            .clipShape(Capsule())
-                    }
-                    .padding(.bottom, 20)
-                }
-                .frame(maxWidth: .infinity)
-                .background(.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 18))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18)
-                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                )
-            } else {
-                VStack(spacing: 10) {
-                    ForEach(events) { event in
-                        AppleEventCard(event: event) {
-                            onSelectEvent(event)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 // MARK: - AppleEventCard
 
 struct AppleEventCard: View {
     let event: BloomEvent
     let onTap: () -> Void
     @ObservedObject var manager = CalendarManager.shared
-    @State private var offset: CGFloat = 0
-    @State private var isOpen = false
-
-    private let deleteWidth: CGFloat = 80
 
     var body: some View {
-        HStack(spacing: 0) {
-            // Card principale
-            Button(action: {
-                if isOpen {
-                    closeSwipe()
-                } else {
-                    onTap()
-                }
-            }) {
-                HStack(spacing: 12) {
-                    // Orario
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(event.startTime.formatted(.dateTime.hour().minute()))
-                            .font(.headline)
-                            .foregroundColor(.primary)
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                // Orario
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(event.startTime.formatted(.dateTime.hour().minute()))
+                        .font(.headline)
+                        .foregroundColor(.primary)
 
-                        if event.hasEndTime, let endTime = event.endTime {
-                            Text(endTime.formatted(.dateTime.hour().minute()))
+                    if event.hasEndTime, let endTime = event.endTime {
+                        Text(endTime.formatted(.dateTime.hour().minute()))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(width: 55, alignment: .leading)
+
+                // Barra colorata verticale
+                Rectangle()
+                    .fill(event.isCompleted ? Color.green : Color.blue)
+                    .frame(width: 3.5, height: 38)
+                    .clipShape(Capsule())
+
+                // Titolo & Notifica
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(event.title)
+                        .font(.body.weight(.medium))
+                        .foregroundColor(event.isCompleted ? .secondary : .primary)
+                        .strikethrough(event.isCompleted)
+                        .lineLimit(2)
+
+                    if !event.reminders.isEmpty || event.reminderId != nil {
+                        HStack(spacing: 4) {
+                            Image(systemName: "bell.fill")
+                                .font(.caption2)
+                                .foregroundColor(.orange)
+                            Text("Promemoria")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    .frame(width: 55, alignment: .leading)
+                }
 
-                    // Barra colorata verticale
-                    Rectangle()
-                        .fill(event.isCompleted ? Color.green : Color.blue)
-                        .frame(width: 3.5, height: 38)
-                        .clipShape(Capsule())
+                Spacer()
 
-                    // Titolo & Notifica
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(event.title)
-                            .font(.body.weight(.medium))
-                            .foregroundColor(event.isCompleted ? .secondary : .primary)
-                            .strikethrough(event.isCompleted)
-                            .lineLimit(2)
-
-                        if !event.reminders.isEmpty || event.reminderId != nil {
-                            HStack(spacing: 4) {
-                                Image(systemName: "bell.fill")
-                                    .font(.caption2)
-                                    .foregroundColor(.orange)
-                                Text("Promemoria")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+                // Cerchietto completamento
+                Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        manager.toggleComplete(event)
                     }
-
-                    Spacer()
-
-                    // Cerchietto completamento
-                    Button {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                            manager.toggleComplete(event)
-                        }
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    } label: {
-                        Image(systemName: event.isCompleted ? "checkmark.circle.fill" : "circle")
-                            .font(.title2)
-                            .foregroundColor(event.isCompleted ? .green : .secondary)
-                    }
-                    .buttonStyle(.plain)
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                } label: {
+                    Image(systemName: event.isCompleted ? "checkmark.circle.fill" : "circle")
+                        .font(.title2)
+                        .foregroundColor(event.isCompleted ? .green : .secondary)
                 }
-                .padding(14)
-                .background(.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                )
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
-            .offset(x: offset)
-
-            // Tasto Elimina fisso a destra
-            Button {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-                    offset = -UIScreen.main.bounds.width
-                }
-                UINotificationFeedbackGenerator().notificationOccurred(.warning)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
-                    manager.deleteEvent(event)
-                }
-            } label: {
-                VStack(spacing: 6) {
-                    Image(systemName: "trash.fill")
-                        .font(.title3)
-                    Text("Elimina")
-                        .font(.caption2.bold())
-                }
-                .foregroundColor(.white)
-                .frame(width: deleteWidth)
-                .frame(maxHeight: .infinity)
-                .background(Color.red)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-            }
-            .offset(x: offset + deleteWidth) // segue la card durante il drag
-            .opacity(isOpen ? 1 : 0)
+            .padding(14)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            )
         }
-        .gesture(
-            DragGesture(minimumDistance: 8, coordinateSpace: .local)
-                .onChanged { value in
-                    guard value.startLocation.x > 30 else { return } // evita conflitto con nav back
-                    let drag = value.translation.width
-                    if drag < 0 {
-                        // Resistenza naturale: più scorri più rallenta
-                        let resistance = isOpen ? drag : drag * 0.7
-                        offset = max(resistance, -deleteWidth - 8)
-                    } else if isOpen {
-                        offset = min(0, -deleteWidth + drag)
-                    }
-                }
-                .onEnded { value in
-                    let drag = value.translation.width
-                    let velocity = value.predictedEndTranslation.width
-
-                    if drag < -deleteWidth / 2 || velocity < -200 {
-                        // Snap aperto
-                        withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
-                            offset = -deleteWidth
-                            isOpen = true
-                        }
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    } else {
-                        // Snap chiuso
-                        closeSwipe()
-                    }
-                }
-        )
+        .buttonStyle(.plain)
         .contextMenu {
             Button(role: .destructive) {
                 withAnimation { manager.deleteEvent(event) }
             } label: {
                 Label("Elimina Impegno", systemImage: "trash")
             }
-        }
-    }
-
-    private func closeSwipe() {
-        withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
-            offset = 0
-            isOpen = false
         }
     }
 }
