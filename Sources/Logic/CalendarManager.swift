@@ -57,20 +57,22 @@ class CalendarManager: ObservableObject {
     }
 
     func replaceWithCloudData(_ cloudEvents: [BloomEvent]) {
-        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+        self.events = cloudEvents
+        self.saveLocalEvents()
 
-        var updatedEvents = cloudEvents
-        for i in 0..<updatedEvents.count {
-            for rIdx in 0..<updatedEvents[i].reminders.count {
-                scheduleNotification(for: &updatedEvents[i], reminderIndex: rIdx)
-            }
-            if updatedEvents[i].reminderTime != nil {
-                scheduleNotification(for: &updatedEvents[i])
+        // Esegui la rischedulazione delle notifiche in background per non bloccare il Main Thread all'avvio
+        Task.detached(priority: .utility) {
+            UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+            var updatedEvents = cloudEvents
+            for i in 0..<updatedEvents.count {
+                for rIdx in 0..<updatedEvents[i].reminders.count {
+                    self.scheduleNotification(for: &updatedEvents[i], reminderIndex: rIdx)
+                }
+                if updatedEvents[i].reminderTime != nil {
+                    self.scheduleNotification(for: &updatedEvents[i])
+                }
             }
         }
-
-        events = updatedEvents
-        saveLocalEvents()
     }
 
     // MARK: - CRUD (Local + Cloud)

@@ -36,7 +36,7 @@ class AuthManager: ObservableObject {
     init() {
         loadLocalSession()
         if isLoggedIn {
-            Task {
+            Task(priority: .utility) {
                 await syncAfterLogin()
             }
         }

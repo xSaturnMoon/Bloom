@@ -191,14 +191,19 @@ class ShoppingManager: ObservableObject {
     // MARK: - Live Realtime Sync
 
     private var syncTimer: AnyCancellable?
+    private var isFetchingSilently = false
+    private var isFetchingFriendSilently = false
 
     func startLiveSync() {
+        // Fetch iniziale leggero
         fetchFromCloudSilently()
         if let friend = observingFriend {
             fetchItemsForFriendSilently(friend)
         }
+
         syncTimer?.cancel()
-        syncTimer = Timer.publish(every: 2.0, on: .main, in: .common)
+        // Polling intelligente ogni 20 secondi (non più ogni 2 secondi!), solo mentre la schermata è aperta
+        syncTimer = Timer.publish(every: 20.0, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 self?.fetchFromCloudSilently()
@@ -213,16 +218,56 @@ class ShoppingManager: ObservableObject {
         syncTimer = nil
     }
 
+    func refreshFromCloudAsync() async {
+        guard sb.isAuthenticated, !isFetchingSilently else { return }
+        isFetchingSilently = true
+        defer { isFetchingSilently = false }
+        do {
+            let sbItems = try await sb.fetchShoppingItems()
+            let cloudItems = sbItems.map { $0.toShoppingItem() }
+            await MainActor.run {
+                self.items = cloudItems
+                self.saveLocalItems()
+            }
+        } catch {
+            // Ignora errori di refresh
+        }
+    }
+
     func fetchFromCloudSilently() {
-        guard sb.isAuthenticated else { return }
-        Task {
+        guard sb.isAuthenticated, !isFetchingSilently else { return }
+        isFetchingSilently = true
+        Task(priority: .utility) {
+            defer { self.isFetchingSilently = false }
             do {
                 let sbItems = try await sb.fetchShoppingItems()
                 let cloudItems = sbItems.map { $0.toShoppingItem() }
-                await MainActor.run {
-                    if self.items != cloudItems {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            self.items = cloudItems
+
+                // Confronta gli item per ID e contenuto reale (senza farsi ingannare dall'ordine dell'array)
+                let localDict = Dictionary(self.items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                let cloudDict = Dictionary(cloudItems.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
+                let hasChanges = localDict != cloudDict
+
+                if hasChanges {
+                    await MainActor.run {
+                        // Preserva l'ordine visivo locale per gli item esistenti e inserisci i nuovi in cima
+                        var updatedList: [ShoppingItem] = []
+                        var seenIds = Set<UUID>()
+
+                        for local in self.items {
+                            if let remote = cloudDict[local.id] {
+                                updatedList.append(remote)
+                                seenIds.insert(local.id)
+                            }
+                        }
+
+                        for remote in cloudItems where !seenIds.contains(remote.id) {
+                            updatedList.insert(remote, at: 0)
+                        }
+
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            self.items = updatedList
                         }
                         self.saveLocalItems()
                     }
@@ -234,15 +279,21 @@ class ShoppingManager: ObservableObject {
     }
 
     func fetchItemsForFriendSilently(_ friend: Friend) {
-        guard sb.isAuthenticated else { return }
-        Task {
+        guard sb.isAuthenticated, !isFetchingFriendSilently else { return }
+        isFetchingFriendSilently = true
+        Task(priority: .utility) {
+            defer { self.isFetchingFriendSilently = false }
             do {
                 if let profile = try await sb.findProfileByCode(friend.code) {
                     let sbItems = try await sb.fetchShoppingItems(forUserId: profile.userId)
                     let domainItems = sbItems.map { $0.toShoppingItem() }
-                    await MainActor.run {
-                        if self.observingItems != domainItems {
-                            withAnimation(.easeInOut(duration: 0.25)) {
+
+                    let localDict = Dictionary(self.observingItems.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                    let remoteDict = Dictionary(domainItems.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
+                    if localDict != remoteDict {
+                        await MainActor.run {
+                            withAnimation(.easeInOut(duration: 0.2)) {
                                 self.observingItems = domainItems
                             }
                         }

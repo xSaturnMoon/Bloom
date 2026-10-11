@@ -558,6 +558,7 @@ class SupabaseManager {
             throw SupabaseError.invalidURL
         }
         var req = URLRequest(url: url)
+        req.timeoutInterval = 12.0 // Timeout rapido per evitare blocchi infiniti in caso di rete instabile
         req.httpMethod = method
         req.setValue(key, forHTTPHeaderField: "apikey")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")

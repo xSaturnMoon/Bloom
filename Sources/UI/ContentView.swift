@@ -8,21 +8,29 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             TabView(selection: $appManager.selectedTab) {
-                CalendarView()
-                    .tabItem { Label("Calendario", systemImage: "calendar") }
-                    .tag(0)
-                
-                ShoppingView()
-                    .tabItem { Label("Spesa", systemImage: "cart") }
-                    .tag(1)
-                
-                WeatherView()
-                    .tabItem { Label("Meteo", systemImage: "cloud.sun") }
-                    .tag(2)
-                
-                SettingsView()
-                    .tabItem { Label("Impostazioni", systemImage: "gear") }
-                    .tag(3)
+                ForEach(appManager.visibleTabs) { config in
+                    switch config.type {
+                    case .calendar:
+                        CalendarView()
+                            .tabItem { Label(config.type.title, systemImage: config.type.icon) }
+                            .tag(BloomTabType.calendar)
+
+                    case .shopping:
+                        ShoppingView()
+                            .tabItem { Label(config.type.title, systemImage: config.type.icon) }
+                            .tag(BloomTabType.shopping)
+
+                    case .weather:
+                        WeatherView()
+                            .tabItem { Label(config.type.title, systemImage: config.type.icon) }
+                            .tag(BloomTabType.weather)
+
+                    case .settings:
+                        SettingsView()
+                            .tabItem { Label(config.type.title, systemImage: config.type.icon) }
+                            .tag(BloomTabType.settings)
+                    }
+                }
             }
             .tint(.blue)
         }

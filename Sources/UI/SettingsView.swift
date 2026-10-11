@@ -100,6 +100,19 @@ struct SettingsView: View {
                     }
                 }
 
+                // Disposizione Categorie Section
+                Section("Barra Inferiore") {
+                    NavigationLink(destination: TabBarCustomizationView()) {
+                        HStack {
+                            Label("Disposizione Categorie", systemImage: "square.grid.2x2")
+                            Spacer()
+                            Text("\(AppManager.shared.visibleTabs.count) attive")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 // Orario Section — NUOVA FEATURE
                 Section("Inserimento Orario") {
                     Picker("Modalità orario", selection: $timePickerMode) {
@@ -613,3 +626,99 @@ struct ChangePasswordView: View {
         }
     }
 }
+
+// MARK: - TabBarCustomizationView
+
+struct TabBarCustomizationView: View {
+    @ObservedObject var appManager = AppManager.shared
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(appManager.tabConfigs) { config in
+                    HStack(spacing: 14) {
+                        Image(systemName: config.type.icon)
+                            .font(.title3)
+                            .foregroundColor(iconColor(for: config.type))
+                            .frame(width: 28)
+
+                        Text(config.type.title)
+                            .font(.body.weight(.medium))
+                            .foregroundColor(config.isVisible ? .primary : .secondary)
+
+                        Spacer()
+
+                        if config.type.canBeHidden {
+                            Button {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                    appManager.toggleVisibility(for: config.type)
+                                }
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: config.isVisible ? "eye.fill" : "eye.slash.fill")
+                                        .font(.subheadline.bold())
+                                    Text(config.isVisible ? "Visibile" : "Nascosta")
+                                        .font(.caption.bold())
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(config.isVisible ? Color.blue.opacity(0.12) : Color.gray.opacity(0.15))
+                                .foregroundColor(config.isVisible ? .blue : .secondary)
+                                .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            HStack(spacing: 4) {
+                                Image(systemName: "lock.fill")
+                                    .font(.caption2)
+                                Text("Sempre visibile")
+                                    .font(.caption)
+                            }
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color(UIColor.tertiarySystemFill))
+                            .clipShape(Capsule())
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                .onMove { indices, newOffset in
+                    appManager.moveTabs(from: indices, to: newOffset)
+                }
+            } header: {
+                Text("Ordine e Visibilità")
+            } footer: {
+                Text("Trascina le categorie tenendo premute le linee a destra per cambiare l'ordine nella barra in basso. Tocca il pulsante per nascondere o mostrare le categorie.")
+            }
+
+            Section {
+                Button(role: .destructive) {
+                    withAnimation {
+                        appManager.resetToDefault()
+                    }
+                } label: {
+                    HStack {
+                        Spacer()
+                        Text("Ripristina Disposizione Predefinita")
+                        Spacer()
+                    }
+                }
+            }
+        }
+        .environment(\.editMode, .constant(.active))
+        .navigationTitle("Disposizione Categorie")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func iconColor(for type: BloomTabType) -> Color {
+        switch type {
+        case .calendar: return .blue
+        case .shopping: return .green
+        case .weather: return .orange
+        case .settings: return .gray
+        }
+    }
+}
+

@@ -210,6 +210,9 @@ struct ShoppingView: View {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
+                .refreshable {
+                    await manager.refreshFromCloudAsync()
+                }
             }
             .navigationTitle("Spesa")
             .navigationBarTitleDisplayMode(.inline)
