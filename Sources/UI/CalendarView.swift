@@ -413,7 +413,7 @@ struct CalendarView: View {
 // MARK: - CalendarMonthGrid
 
 struct CalendarDaySlot: Identifiable {
-    let id = UUID()
+    let id: String
     let date: Date?
 }
 
@@ -502,14 +502,16 @@ struct CalendarMonthGrid: View {
         let leadingSpaces = (weekdayOfFirst - cal.firstWeekday + 7) % 7
 
         var slots: [CalendarDaySlot] = []
-        for _ in 0..<leadingSpaces {
-            slots.append(CalendarDaySlot(date: nil))
+        for i in 0..<leadingSpaces {
+            slots.append(CalendarDaySlot(id: "empty_\(i)", date: nil))
         }
 
         guard let range = cal.range(of: .day, in: .month, for: date) else { return slots }
+        let year = cal.component(.year, from: date)
+        let month = cal.component(.month, from: date)
         for day in range {
             if let dayDate = cal.date(byAdding: .day, value: day - 1, to: firstOfMonth) {
-                slots.append(CalendarDaySlot(date: dayDate))
+                slots.append(CalendarDaySlot(id: "day_\(year)_\(month)_\(day)", date: dayDate))
             }
         }
         return slots
@@ -521,7 +523,6 @@ struct CalendarMonthGrid: View {
 struct AppleEventCard: View {
     let event: BloomEvent
     let onTap: () -> Void
-    @ObservedObject var manager = CalendarManager.shared
 
     var body: some View {
         Button(action: onTap) {
@@ -571,7 +572,7 @@ struct AppleEventCard: View {
                 // Cerchietto completamento
                 Button {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                        manager.toggleComplete(event)
+                        CalendarManager.shared.toggleComplete(event)
                     }
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 } label: {
@@ -592,7 +593,7 @@ struct AppleEventCard: View {
         .buttonStyle(.plain)
         .contextMenu {
             Button(role: .destructive) {
-                withAnimation { manager.deleteEvent(event) }
+                withAnimation { CalendarManager.shared.deleteEvent(event) }
             } label: {
                 Label("Elimina Impegno", systemImage: "trash")
             }

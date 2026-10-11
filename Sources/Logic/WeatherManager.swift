@@ -139,7 +139,7 @@ class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     // MARK: - Persistence & Cache
 
     private func loadSavedData() {
-        // Carica cache meteo per render istantaneo
+        // Carica cache meteo per render istantaneo (nessuna rete, solo disco)
         if let cacheData = UserDefaults.standard.data(forKey: cacheKey),
            let cachedWeather = try? JSONDecoder().decode([UUID: WeatherData].self, from: cacheData) {
             self.weatherData = cachedWeather
@@ -150,13 +150,17 @@ class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegate {
            let decoded = try? JSONDecoder().decode([WeatherLocation].self, from: data),
            !decoded.isEmpty {
             self.locations = decoded
-            Task { await refreshAll() }
+            // Aggiorna in background SOLO se la cache è assente o più vecchia di 30 minuti
+            let isCacheStale = weatherData.isEmpty || weatherData.values.contains { Date().timeIntervalSince($0.lastUpdated) > 1800 }
+            if isCacheStale {
+                Task(priority: .utility) { await refreshAll() }
+            }
         } else {
             // Se vuoto, aggiungi Roma come fallback e richiedi posizione
             let defaultLoc = WeatherLocation(name: "Roma", lat: 41.8919, lon: 12.5113, isCurrentLocation: false, adminRegion: "Lazio", country: "Italia")
             self.locations = [defaultLoc]
             saveLocations()
-            Task {
+            Task(priority: .utility) {
                 await fetchWeather(for: defaultLoc)
                 requestLocation()
             }
@@ -179,7 +183,7 @@ class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         guard !cloudLocs.isEmpty else { return }
         locations = cloudLocs
         saveLocations()
-        Task { await refreshAll() }
+        Task(priority: .utility) { await refreshAll() }
     }
 
     func clearLocalData() {

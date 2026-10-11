@@ -182,7 +182,17 @@ class AuthManager: ObservableObject {
     // MARK: - Cloud Sync (Merge Strategy)
 
     func syncAfterLogin() async {
+        guard !isSyncing else { return }
+        if let last = lastSyncDate, Date().timeIntervalSince(last) < 60 {
+            return
+        }
         await MainActor.run { isSyncing = true }
+        defer {
+            Task { @MainActor in
+                self.isSyncing = false
+                self.lastSyncDate = Date()
+            }
+        }
 
         // BUG-01 FIX: Recuperiamo il friendCode PRIMA di salvare la sessione,
         // così saveLocalSession include sempre il friendCode aggiornato.
@@ -268,11 +278,6 @@ class AuthManager: ObservableObject {
             await MainActor.run {
                 WeatherManager.shared.replaceWithCloudLocations(merged)
             }
-        }
-
-        await MainActor.run {
-            isSyncing = false
-            lastSyncDate = Date()
         }
     }
 }

@@ -1,5 +1,5 @@
 {
-  "version": "1.2.47",
-  "notes": "Implement automatic JWT token refresh to prevent session expiration issues.",
+  "version": "1.2.50",
+  "notes": "Risolto completamente il blocco all'avvio e nella spesa, apertura sulla prima categoria della barra, super reattività.",
   "url": "https://github.com/xSaturnMoon/Bloom/releases/download/latest/Bloom.ipa"
 }

@@ -147,7 +147,12 @@ struct ShoppingView: View {
                         if !activeItems.isEmpty {
                             Section {
                                 ForEach(activeItems) { item in
-                                    ShoppingItemCard(item: item)
+                                    ShoppingItemCard(item: item) {
+                                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                            manager.toggleItem(item)
+                                        }
+                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    }
                                         .listRowInsets(EdgeInsets(top: 6, leading: 20, bottom: 6, trailing: 20))
                                         .listRowBackground(Color.clear)
                                         .listRowSeparator(.hidden)
@@ -183,7 +188,12 @@ struct ShoppingView: View {
                                 .listRowSeparator(.hidden)
                                 
                                 ForEach(completedItems) { item in
-                                    ShoppingItemCard(item: item)
+                                    ShoppingItemCard(item: item) {
+                                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                            manager.toggleItem(item)
+                                        }
+                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    }
                                         .listRowInsets(EdgeInsets(top: 6, leading: 20, bottom: 6, trailing: 20))
                                         .listRowBackground(Color.clear)
                                         .listRowSeparator(.hidden)
@@ -316,8 +326,8 @@ struct ShoppingView: View {
 }
 
 struct ShoppingItemCard: View {
-    var item: ShoppingItem
-    @ObservedObject var manager = ShoppingManager.shared
+    let item: ShoppingItem
+    let onToggle: () -> Void
     
     var body: some View {
         HStack(spacing: 15) {
@@ -337,9 +347,7 @@ struct ShoppingItemCard: View {
             Spacer()
             
             Button {
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                    manager.toggleItem(item)
-                }
+                onToggle()
             } label: {
                 Image(systemName: item.isChecked ? "checkmark.circle.fill" : "circle")
                     .font(.title2)

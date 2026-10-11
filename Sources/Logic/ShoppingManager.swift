@@ -195,22 +195,23 @@ class ShoppingManager: ObservableObject {
     private var isFetchingFriendSilently = false
 
     func startLiveSync() {
-        // Fetch iniziale leggero
+        // Fetch iniziale leggero una tantum
         fetchFromCloudSilently()
         if let friend = observingFriend {
             fetchItemsForFriendSilently(friend)
         }
 
         syncTimer?.cancel()
-        // Polling intelligente ogni 20 secondi (non più ogni 2 secondi!), solo mentre la schermata è aperta
-        syncTimer = Timer.publish(every: 20.0, on: .main, in: .common)
-            .autoconnect()
-            .sink { [weak self] _ in
-                self?.fetchFromCloudSilently()
-                if let friend = self?.observingFriend {
-                    self?.fetchItemsForFriendSilently(friend)
+        // Timer attivo SOLO se stiamo osservando la lista di un amico in condivisione.
+        // Per la propria lista locale non serve polling continuo che satura la rete e causa lag.
+        if observingFriend != nil {
+            syncTimer = Timer.publish(every: 30.0, on: .main, in: .common)
+                .autoconnect()
+                .sink { [weak self] _ in
+                    guard let self = self, let friend = self.observingFriend else { return }
+                    self.fetchItemsForFriendSilently(friend)
                 }
-            }
+        }
     }
 
     func stopLiveSync() {

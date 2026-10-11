@@ -85,10 +85,8 @@ class AppManager: ObservableObject {
             saveTabConfigs()
         }
 
-        // Assicurati che il tab selezionato sia effettivamente tra quelli visibili
-        if !visibleTabs.contains(where: { $0.type == selectedTab }) {
-            selectedTab = visibleTabs.first?.type ?? .calendar
-        }
+        // All'avvio apri sempre il primo tab visibile (in ordine salvato dall'utente)
+        selectedTab = visibleTabs.first?.type ?? .calendar
     }
 
     func saveTabConfigs() {

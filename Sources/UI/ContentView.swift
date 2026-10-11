@@ -39,6 +39,10 @@ struct ContentView: View {
                 .interactiveDismissDisabled() // Prevent swipe to dismiss
         }
         .onAppear {
+            // Assicura che l'app si apra SEMPRE sulla prima categoria della sidebar in basso
+            if let firstTab = appManager.visibleTabs.first?.type {
+                appManager.selectedTab = firstTab
+            }
             if !hasCheckedAuth {
                 hasCheckedAuth = true
                 if AuthManager.shared.currentUser == nil {
